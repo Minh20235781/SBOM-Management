@@ -5,8 +5,11 @@
 [![Security](https://img.shields.io/badge/Security-Supply--Chain-green.svg)]()
 
 > **Đồ án Nghiên cứu Tốt nghiệp 1 (GR1)**
+
 > **Đề tài:** Xây dựng Website quản lý thông tin của các hệ thống theo quy trình DevOps dựa trên SBOM.
+
 > **Sinh viên thực hiện:** Nguyễn Nhật Minh - 20235781
+
 > **Giáo viên hướng dẫn:** TS. Vũ Thị Hương Giang
 
 ---
