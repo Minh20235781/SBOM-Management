@@ -1,122 +1,426 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from 'react';
+import SBOMUpload from './components/SBOMUpload';
+import ComponentTable from './components/ComponentTable';
+import DependencyTree from './components/DependencyTree';
+import Dashboard from './components/Dashboard';
+import { type SBOMComponent, type CycloneDXVulnerability, type Dependency } from './types/sbom';
+import { 
+  Search, Database, LayoutDashboard, Box, ShieldAlert, 
+  Activity, ListTree, History, ShieldCheck, FileKey, 
+  GitMerge, Server, Layers, UploadCloud 
+} from 'lucide-react';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [components, setComponents] = useState<SBOMComponent[]>([]);
+  const [vulnerabilities, setVulnerabilities] = useState<CycloneDXVulnerability[]>([]);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [activeMenu, setActiveMenu] = useState<string>('dashboard');
+
+  const handleUploadSuccess = (rawData: unknown) => {
+    const data = rawData as Record<string, unknown>;
+    
+    // Kiểm tra SPDX
+    if (data.spdxVersion || data.SPDXID) {
+      const packages = data.packages as Array<Record<string, unknown>> | undefined;
+      
+      if (Array.isArray(packages)) {
+        const mappedComponents: SBOMComponent[] = packages.map((pkg) => {
+          const externalRefs = pkg.externalRefs as Array<Record<string, unknown>> | undefined;
+          const purlRef = externalRefs?.find((ref) => ref.referenceType === 'purl');
+
+          return {
+            component_id: (pkg.SPDXID as string) || Math.random().toString(36).substr(2, 9),
+            sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
+            name: (pkg.name as string) || 'Unknown',
+            version: pkg.versionInfo as string | undefined,
+            purl: purlRef ? (purlRef.referenceLocator as string) : undefined,
+            licenses: pkg.licenseConcluded !== 'NOASSERTION' ? (pkg.licenseConcluded as string) : (pkg.licenseDeclared !== 'NOASSERTION' ? (pkg.licenseDeclared as string) : 'N/A'),
+          };
+        });
+        setComponents(mappedComponents);
+        // SPDX thường không nhúng kèm dữ liệu lỗ hổng giống CycloneDX mặc định
+        setVulnerabilities([]);
+
+        const relationships = data.relationships as Array<{ spdxElementId: string, relatedSpdxElement: string, relationshipType: string }> | undefined;
+        if (relationships) {
+          const mappedDeps: Dependency[] = [];
+          let idCounter = 1;
+          relationships.forEach(rel => {
+            if (rel.relationshipType === 'DEPENDS_ON') {
+              mappedDeps.push({
+                dependency_id: idCounter++,
+                sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
+                component_ref: rel.spdxElementId,
+                depends_on_ref: rel.relatedSpdxElement,
+              });
+            }
+          });
+          setDependencies(mappedDeps);
+        } else {
+          setDependencies([]);
+        }
+      } else {
+        alert("Cấu trúc file SPDX SBOM không hợp lệ (thiếu danh sách packages)!");
+      }
+    } 
+    // Kiểm tra CycloneDX
+    else if (data.bomFormat === "CycloneDX" || data.components) {
+      const componentsList = data.components as Array<Record<string, unknown>>;
+      const mappedComponents: SBOMComponent[] = componentsList.map((c) => {
+        const licenses = c.licenses as Array<{ license?: { id?: string; name?: string } }> | undefined;
+        
+        return {
+          component_id: (c['bom-ref'] as string) || Math.random().toString(36).substr(2, 9),
+          sbom_id: (data.serialNumber as string) || 'manual-upload',
+          name: (c.name as string) || 'Unknown',
+          version: c.version as string | undefined,
+          purl: c.purl as string | undefined,
+          licenses: licenses?.[0]?.license?.id || licenses?.[0]?.license?.name || 'N/A',
+        };
+      });
+      setComponents(mappedComponents);
+
+      if (data.vulnerabilities) {
+        setVulnerabilities(data.vulnerabilities as CycloneDXVulnerability[]);
+      } else {
+        setVulnerabilities([]);
+      }
+
+      if (data.dependencies) {
+        const depsList = data.dependencies as Array<{ ref: string, dependsOn?: string[] }>;
+        const mappedDeps: Dependency[] = [];
+        let idCounter = 1;
+        depsList.forEach(dep => {
+          if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
+            dep.dependsOn.forEach(targetRef => {
+              mappedDeps.push({
+                dependency_id: idCounter++,
+                sbom_id: (data.serialNumber as string) || 'manual-upload',
+                component_ref: dep.ref,
+                depends_on_ref: targetRef,
+              });
+            });
+          }
+        });
+        setDependencies(mappedDeps);
+      } else {
+        setDependencies([]);
+      }
+    } else {
+      alert("Cấu trúc file SBOM không hợp lệ (Không nhận diện được định dạng CycloneDX hoặc SPDX)!");
+    }
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0">
+        <div className="h-16 flex items-center px-6 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-600 p-1.5 rounded-lg shadow-sm shadow-blue-200">
+              <LayoutDashboard className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-sm leading-tight text-slate-800">SBOM Management</h1>
+              <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">Enterprise Platform</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
 
-      <div className="ticks"></div>
+        <div className="flex-1 overflow-y-auto py-6 px-3 space-y-8 select-none">
+          {/* Menu Nhóm Tổng Quan */}
+          <div>
+            <p className="px-3 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tổng quan</p>
+            <nav className="space-y-1">
+              <button 
+                onClick={() => setActiveMenu('dashboard')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'dashboard' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <LayoutDashboard className={`w-4 h-4 ${activeMenu === 'dashboard' ? 'text-blue-600' : 'text-slate-400'}`} /> Dashboard
+              </button>
+              <button 
+                onClick={() => setActiveMenu('system')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'system' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Server className={`w-4 h-4 ${activeMenu === 'system' ? 'text-blue-600' : 'text-slate-400'}`} /> Hệ thống
+              </button>
+            </nav>
+          </div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+          {/* Menu Nhóm SBOM */}
+          <div>
+            <p className="px-3 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">SBOM</p>
+            <nav className="space-y-1">
+              <button 
+                onClick={() => setActiveMenu('upload')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'upload' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <UploadCloud className={`w-4 h-4 ${activeMenu === 'upload' ? 'text-blue-600' : 'text-slate-400'}`} /> Tải lên
+              </button>
+              <button 
+                onClick={() => setActiveMenu('components')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'components' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Layers className={`w-4 h-4 ${activeMenu === 'components' ? 'text-blue-600' : 'text-slate-400'}`} /> Thành phần
+              </button>
+              <button 
+                onClick={() => setActiveMenu('dependencies')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'dependencies' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <ListTree className={`w-4 h-4 ${activeMenu === 'dependencies' ? 'text-blue-600' : 'text-slate-400'}`} /> Phụ thuộc
+              </button>
+              <button 
+                onClick={() => setActiveMenu('history')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'history' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <History className={`w-4 h-4 ${activeMenu === 'history' ? 'text-blue-600' : 'text-slate-400'}`} /> Lịch sử phiên bản
+              </button>
+            </nav>
+          </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          {/* Menu Nhóm Bảo Mật */}
+          <div>
+            <p className="px-3 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bảo mật</p>
+            <nav className="space-y-1">
+              <button 
+                onClick={() => setActiveMenu('cve')}
+                className={`w-full flex justify-between items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'cve' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldAlert className={`w-4 h-4 ${activeMenu === 'cve' ? 'text-blue-600' : 'text-red-400'}`} /> Lỗ hổng (CVE)
+                </div>
+                {vulnerabilities.length > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">{vulnerabilities.length}</span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveMenu('compliance')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'compliance' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <ShieldCheck className={`w-4 h-4 ${activeMenu === 'compliance' ? 'text-blue-600' : 'text-slate-400'}`} /> Tuân thủ
+              </button>
+              <button 
+                onClick={() => setActiveMenu('audit')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'audit' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <FileKey className={`w-4 h-4 ${activeMenu === 'audit' ? 'text-blue-600' : 'text-slate-400'}`} /> Kiểm toán
+              </button>
+            </nav>
+          </div>
+
+          {/* Menu Nhóm CI/CD */}
+          <div>
+            <p className="px-3 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">CI/CD</p>
+            <nav className="space-y-1">
+              <button 
+                onClick={() => setActiveMenu('pipeline')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'pipeline' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <GitMerge className={`w-4 h-4 ${activeMenu === 'pipeline' ? 'text-blue-600' : 'text-slate-400'}`} /> Pipeline
+              </button>
+              <button 
+                onClick={() => setActiveMenu('monitoring')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'monitoring' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Activity className={`w-4 h-4 ${activeMenu === 'monitoring' ? 'text-blue-600' : 'text-slate-400'}`} /> Giám sát
+              </button>
+            </nav>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Top Navbar */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+          <div className="flex-1 max-w-xl relative">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Tìm kiếm hệ thống, CVE, pipeline..." 
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-10 pr-4 text-sm focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all placeholder:text-slate-400" 
+            />
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              Live
+            </div>
+            <div className="flex items-center gap-3 py-2 border-l border-slate-200 pl-6">
+              <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm shadow-sm opacity-90">
+                NM
+              </div>
+              <div className="text-sm">
+                <p className="font-bold text-slate-700 leading-none">Nguyễn Minh</p>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">DevOps Engineer</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Content Scrollable area */}
+        <div className="flex-1 overflow-auto bg-[#fafafa] p-8">
+          
+          <div className="max-w-7xl mx-auto space-y-6">
+
+            {activeMenu === 'dashboard' && <Dashboard />}
+
+            {activeMenu === 'upload' && (
+              <>
+                {/* Khối 1: Tải lên SBOM & Thống kê */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+                  <div className="flex-1 w-full max-w-xl">
+                    <h3 className="font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 text-sm">
+                      <Database className="w-4 h-4 text-blue-500" /> Tải lên SBOM
+                    </h3>
+                    <SBOMUpload onUploadSuccess={handleUploadSuccess} />
+                  </div>
+                  
+                  <div className="flex gap-4 shrink-0 mt-4 lg:mt-0">
+                    <div className="px-6 py-4 bg-blue-50/50 rounded-xl border border-blue-100 shadow-sm text-center min-w-[130px]">
+                      <p className="text-xs font-bold uppercase text-slate-500 mb-1 tracking-wider">Thành phần</p>
+                      <p className="text-3xl font-bold text-blue-600">{components.length}</p>
+                    </div>
+                    <div className="px-6 py-4 bg-amber-50/50 rounded-xl border border-amber-100 shadow-sm text-center min-w-[130px]">
+                      <p className="text-xs font-bold uppercase text-slate-500 mb-1 tracking-wider">Lỗ hổng (CVE)</p>
+                      <p className="text-3xl font-bold text-amber-500">{vulnerabilities.length}</p>
+                    </div>
+                  </div>
+                </div>
+            </div>
+
+            {/* Khối 2: Danh mục thành phần (Ngay bên dưới) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="px-6 py-5 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                        <Box className="w-4 h-4 text-purple-500" /> Danh mục thành phần
+                    </h3>
+                </div>
+                <div className="p-6 bg-slate-50/50">
+                  <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[400px]">
+                    {components.length > 0 ? (
+                      <ComponentTable components={components} />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+                        <Box className="w-12 h-12 mb-3 opacity-20 text-slate-500" />
+                        <p className="text-sm font-medium">Chưa có dữ liệu SBOM thực tế. Vui lòng tải lên SBOM.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+            </div>
+
+            {/* Khối Cây Phụ Thuộc */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="px-6 py-5 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                        <ListTree className="w-4 h-4 text-emerald-500" /> Cây phụ thuộc
+                    </h3>
+                </div>
+                <div className="p-6 bg-slate-50/50">
+                  <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[400px]">
+                    <DependencyTree dependencies={dependencies} components={components} />
+                  </div>
+                </div>
+            </div>
+
+            {/* Khối 3: Mock Data (Lỗ hổng & Phân bổ) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Bảng Mock Lỗ hổng */}
+              <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
+                  <h3 className="font-bold text-slate-800">Lỗ hổng ưu tiên cao</h3>
+                  <a href="#" className="text-sm text-blue-600 hover:text-blue-700 font-semibold">Xem tất cả →</a>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead>
+                      <tr className="text-slate-500 text-xs uppercase tracking-wider font-semibold">
+                        <th className="px-6 py-4 font-medium">CVE ID</th>
+                        <th className="px-6 py-4 font-medium">Mức độ</th>
+                        <th className="px-6 py-4 font-medium">Thành phần</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {vulnerabilities.length > 0 ? (
+                        vulnerabilities.map((vuln, idx) => {
+                          const severity = vuln.ratings?.[0]?.severity || 'unknown';
+                          let severityColor = "bg-slate-50 text-slate-700 border-slate-200";
+                          let severityText = severity;
+                          if (severity.toLowerCase() === 'critical') { severityColor = "text-red-700 bg-red-50 border-red-100"; severityText="Nghiêm trọng"; }
+                          else if (severity.toLowerCase() === 'high') { severityColor = "text-amber-700 bg-amber-50 border-amber-100"; severityText="Cao"; }
+                          else if (severity.toLowerCase() === 'medium') { severityColor = "text-blue-700 bg-blue-50 border-blue-100"; severityText="Trung bình"; }
+                          else if (severity.toLowerCase() === 'low') { severityColor = "text-emerald-700 bg-emerald-50 border-emerald-100"; severityText="Thấp"; }
+
+                          const affectedRef = vuln.affects?.[0]?.ref || 'Unknown';
+                          const affectedComponent = components.find(c => c.component_id === affectedRef)?.name || affectedRef;
+
+                          return (
+                            <tr key={vuln.id || idx}>
+                              <td className="px-6 py-4 font-mono text-slate-600 bg-slate-50/50">{vuln.id || 'N/A'}</td>
+                              <td className="px-6 py-4 bg-slate-50/50">
+                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${severityColor}`}>
+                                  {severityText}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 bg-slate-50/50 font-medium text-slate-700">{affectedComponent}</td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
+                            <ShieldAlert className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p>Không tìm thấy lỗ hổng nào trong file SBOM hiện tại.</p>
+                            <p className="text-xs text-slate-400 mt-1">Sử dụng Grype ở Backend để quét tự động.</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Phân bổ theo môi trường */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                  <h3 className="font-bold text-slate-800 mb-6">Phân bổ theo môi trường</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Production</span><span className="font-bold text-slate-700">1,842</span></div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '60%' }}></div></div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Staging</span><span className="font-bold text-slate-700">1,024</span></div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-400 h-1.5 rounded-full" style={{ width: '35%' }}></div></div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Dev</span><span className="font-bold text-slate-700">724</span></div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-slate-300 h-1.5 rounded-full" style={{ width: '20%' }}></div></div>
+                    </div>
+                  </div>
+              </div>
+            </div>
+            </>
+            )}
+
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && (
+              <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <Activity className="w-16 h-16 mb-4 opacity-20" />
+                <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>
+                <p className="text-sm mt-2">Vui lòng chọn Dashboard hoặc mục Tải lên để xem trước.</p>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
