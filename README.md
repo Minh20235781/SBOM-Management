@@ -1,4 +1,4 @@
-# 🛡️ Website quản lý thông tin của các hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials)
+# Website quản lý thông tin của các hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials)
 
 [![HUST](https://img.shields.io/badge/University-HUST-red.svg)](https://www.hust.edu.vn/)
 [![DevOps](https://img.shields.io/badge/Process-DevOps-blue.svg)]()
