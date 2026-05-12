@@ -54,7 +54,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
             {fileName ? fileName : "Tải lên file SBOM"}
           </p>
           <p className="text-sm text-slate-500">
-            Hỗ trợ định dạng JSON/XML (CycloneDX, SPDX)
+            Hỗ trợ định dạng JSON (CycloneDX, SPDX)
           </p>
         </div>
       </div>

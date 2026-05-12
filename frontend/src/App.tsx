@@ -3,17 +3,18 @@ import SBOMUpload from './components/SBOMUpload';
 import ComponentTable from './components/ComponentTable';
 import DependencyTree from './components/DependencyTree';
 import Dashboard from './components/Dashboard';
-import { type SBOMComponent, type CycloneDXVulnerability, type Dependency } from './types/sbom';
+import { type SBOMComponent, type CycloneDXVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
-  GitMerge, Server, Layers, UploadCloud 
+  GitMerge, Server, Layers, UploadCloud, Info 
 } from 'lucide-react';
 
 function App() {
   const [components, setComponents] = useState<SBOMComponent[]>([]);
   const [vulnerabilities, setVulnerabilities] = useState<CycloneDXVulnerability[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [metadata, setMetadata] = useState<SBOMMetadata | null>(null);
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
 
   const handleUploadSuccess = (rawData: unknown) => {
@@ -22,7 +23,22 @@ function App() {
     // Kiểm tra SPDX
     if (data.spdxVersion || data.SPDXID) {
       const packages = data.packages as Array<Record<string, unknown>> | undefined;
+      const creationInfo = data.creationInfo as Record<string, unknown> | undefined;
       
+      const sbomId = (data.documentNamespace as string) || (data.SPDXID as string) || 'manual-upload-spdx';
+      const creators = creationInfo?.creators as string[] | undefined;
+      const toolComponents = creators?.filter(c => c.startsWith('Tool:')).join(', ') || 'N/A';
+      const auts = creators?.filter(c => !c.startsWith('Tool:')).join(', ') || 'N/A';
+      
+      setMetadata({
+        sbom_id: sbomId,
+        authors: auts,
+        created_timestamp: (creationInfo?.created as string) || new Date().toISOString(),
+        tool_components: toolComponents,
+        tool_services: 'N/A',
+        lifecycle_phase: 'N/A'
+      });
+
       if (Array.isArray(packages)) {
         const mappedComponents: SBOMComponent[] = packages.map((pkg) => {
           const externalRefs = pkg.externalRefs as Array<Record<string, unknown>> | undefined;
@@ -46,12 +62,21 @@ function App() {
           const mappedDeps: Dependency[] = [];
           let idCounter = 1;
           relationships.forEach(rel => {
-            if (rel.relationshipType === 'DEPENDS_ON') {
+            // Mở rộng thêm các quan hệ của SPDX để bắt được hết cây (vì một số scanner dùng chiều ngược lại như DEPENDENCY_OF)
+            if (['DEPENDS_ON', 'CONTAINS', 'DYNAMIC_LINK', 'STATIC_LINK', 'DESCRIBES', 'HAS_PREREQUISITE'].includes(rel.relationshipType)) {
               mappedDeps.push({
                 dependency_id: idCounter++,
                 sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
                 component_ref: rel.spdxElementId,
                 depends_on_ref: rel.relatedSpdxElement,
+              });
+            } else if (['DEPENDENCY_OF', 'CONTAINED_BY', 'DESCRIBED_BY', 'PREREQUISITE_FOR'].includes(rel.relationshipType)) {
+              // Quan hệ ngược: B là DEPENDENCY_OF của A => A phụ thuộc B
+              mappedDeps.push({
+                dependency_id: idCounter++,
+                sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
+                component_ref: rel.relatedSpdxElement,
+                depends_on_ref: rel.spdxElementId,
               });
             }
           });
@@ -66,6 +91,38 @@ function App() {
     // Kiểm tra CycloneDX
     else if (data.bomFormat === "CycloneDX" || data.components) {
       const componentsList = data.components as Array<Record<string, unknown>>;
+      const metadataObj = data.metadata as Record<string, unknown> | undefined;
+      const serialNumber = (data.serialNumber as string) || 'manual-upload-cyclonedx';
+      
+      const authorsList = metadataObj?.authors as Array<{ name?: string, email?: string }> | undefined;
+      const parsedAuthors = authorsList?.map(a => `${a.name || ''} ${a.email ? `(${a.email})` : ''}`.trim()).join(', ') || 'N/A';
+      
+      const toolsObj = metadataObj?.tools as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
+      let toolCompsStr = 'N/A';
+      let toolServicesStr = 'N/A';
+      
+      if (Array.isArray(toolsObj)) {
+        toolCompsStr = toolsObj.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
+      } else if (toolsObj) {
+        const tComps = toolsObj.components as Array<{ vendor?: string, name?: string, version?: string }> | undefined;
+        if (tComps) {
+          toolCompsStr = tComps.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
+        }
+        const tServices = toolsObj.services as Array<{ vendor?: string, name?: string, version?: string, endpoints?: string[] }> | undefined;
+        if (tServices) {
+          toolServicesStr = tServices.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
+        }
+      }
+
+      setMetadata({
+        sbom_id: serialNumber,
+        authors: parsedAuthors,
+        created_timestamp: (metadataObj?.timestamp as string) || new Date().toISOString(),
+        tool_components: toolCompsStr,
+        tool_services: toolServicesStr,
+        lifecycle_phase: 'N/A' // Default for CycloneDX, can be extracted from lifecycles if needed
+      });
+
       const mappedComponents: SBOMComponent[] = componentsList.map((c) => {
         const licenses = c.licenses as Array<{ license?: { id?: string; name?: string } }> | undefined;
         
@@ -292,6 +349,43 @@ function App() {
                   </div>
                 </div>
             </div>
+
+            {/* Khối Metadata (Thông tin cơ bản) */}
+            {metadata && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="px-6 py-5 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                        <Info className="w-4 h-4 text-indigo-500" /> Thông tin chung
+                    </h3>
+                </div>
+                <div className="p-6 bg-slate-50/50 grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Mã định danh (SBOM ID)</p>
+                    <p className="text-sm font-medium text-slate-800 truncate" title={metadata.sbom_id}>{metadata.sbom_id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Thời gian tạo</p>
+                    <p className="text-sm font-medium text-slate-800">{new Date(metadata.created_timestamp).toLocaleString('vi-VN')}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Tác giả</p>
+                    <p className="text-sm font-medium text-slate-800">{metadata.authors}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Công cụ tạo (Tools)</p>
+                    <p className="text-sm font-medium text-slate-800">{metadata.tool_components}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Dịch vụ (Services)</p>
+                    <p className="text-sm font-medium text-slate-800">{metadata.tool_services}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Giai đoạn Vòng đời</p>
+                    <p className="text-sm font-medium text-slate-800">{metadata.lifecycle_phase}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Khối 2: Danh mục thành phần (Ngay bên dưới) */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
