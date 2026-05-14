@@ -1,150 +1,120 @@
-# Website quản lý thông tin của các hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials)
+# Công cụ website quản lý thông tin hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials)
 
 [![HUST](https://img.shields.io/badge/University-HUST-red.svg)](https://www.hust.edu.vn/)
-[![DevOps](https://img.shields.io/badge/Process-DevOps-blue.svg)]()
-[![Security](https://img.shields.io/badge/Security-Supply--Chain-green.svg)]()
+[![DevOps](https://img.shields.io/badge/Process-DevSecOps-blue.svg)]()
+[![Security](https://img.shields.io/badge/Security-Supply_Chain-green.svg)]()
 
 > **Đồ án Nghiên cứu Tốt nghiệp 1 (GR1)**
-
-> **Đề tài:** Xây dựng Website quản lý thông tin của các hệ thống theo quy trình DevOps dựa trên SBOM.
-
-> **Sinh viên thực hiện:** Nguyễn Nhật Minh - 20235781
-
-> **Giáo viên hướng dẫn:** TS. Vũ Thị Hương Giang
+>
+> **Đề tài:** Xây dựng nền tảng quản lý thông tin hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials).
+>
+> **Sinh viên thực hiện:** Nguyễn Nhật Minh - 20235781 | **Giảng viên hướng dẫn:** TS. Vũ Thị Hương Giang
 
 ---
 
-## Giới thiệu
+## 🌟 Giới thiệu
 
-Trong bối cảnh tấn công chuỗi cung ứng phần mềm (Software Supply Chain Attacks) ngày càng phức tạp, việc nắm rõ "thành phần" bên trong một sản phẩm phần mềm là rất quan trọng. Dự án này tập trung xây dựng một nền tảng quản lý tập trung dựa trên **SBOM (Software Bill of Materials)**.
+Trong kỷ nguyên chuyển đổi số, an ninh chuỗi cung ứng phần mềm trở nên cấp thiết hơn bao giờ hết. **S-Track** là nền tảng quản lý tập trung thông tin hệ thống, đóng vai trò như một "Hộ chiếu linh kiện" cho phần mềm. Bằng cách ứng dụng tiêu chuẩn SBOM, hệ thống cho phép tự động hóa việc theo dõi các thành phần mã nguồn mở, phụ thuộc bắc cầu và rủi ro an ninh trong suốt vòng đời DevSecOps.
 
-Hệ thống cho phép các kỹ sư DevOps và Security Manager theo dõi, phân tích và quản lý toàn bộ thư viện, phụ thuộc (dependencies) và các lỗ hổng bảo mật liên quan trong suốt vòng đời phát triển phần mềm (SDLC).
+**Mục tiêu cốt lõi:**
 
-## Tính năng chính
+- **Minh bạch hóa:** Nắm rõ mọi thư viện đang vận hành trong hệ thống.
+- **Tự động hóa:** Trích xuất và phân tích dữ liệu trực tiếp từ Pipeline CI/CD.
+- **Kiểm soát biến động:** Phát hiện sự thay đổi thành phần giữa các phiên bản Build (Drift Analysis).
 
-- **Import SBOM:** Hỗ trợ tải lên và phân tích các chuẩn phổ biến: **CycloneDX** và **SPDX** (định dạng JSON/XML).
-- **Inventory Management:** Liệt kê đầy đủ danh mục các thành phần, phiên bản, và giấy phép (licenses).
-- **Vulnerability Scanning:** Tự động đối chiếu các thành phần với cơ sở dữ liệu lỗ hổng (CVE) để đưa ra cảnh báo bảo mật.
-- **Dashboard:** Trực quan hóa mức độ rủi ro của toàn bộ hệ thống dưới dạng biểu đồ.
-- **DevOps Integration:** Cung cấp API để tích hợp trực tiếp vào pipeline CI/CD (Jenkins, GitHub Actions).
+## 🛠 Thuật toán Cốt lõi
 
-## Công nghệ sử dụng
+Hệ thống không chỉ là công cụ lưu trữ mà còn thực hiện các xử lý logic chuyên sâu:
 
-### Backend
+- **Thuật toán Duyệt và Trực quan hóa Đồ thị phụ thuộc:** Sử dụng DFS/BFS để chuyển đổi dữ liệu `cyclonedx.json` thành cấu trúc cây đa tầng, hỗ trợ truy vết nguồn gốc (Provenance).
+- **Thuật toán Phân tích sai lệch (Drift Analysis):** So sánh bản chụp (Snapshot) SBOM giữa các lần Build dựa trên khóa định danh PURL để phát hiện các thư viện bị thêm/sửa/xóa hoặc hạ cấp phiên bản trái phép.
 
-- **Ngôn ngữ:** Node.js (Express)
-- **Cơ sở dữ liệu:** PostgreSQL (Lưu trữ quan hệ giữa các thành phần)
-- **Phân tích SBOM:** Thư viện trích xuất dữ liệu tùy chỉnh cho CycloneDX/SPDX.
+## 🏗 Kiến trúc Hệ thống
 
-### Frontend
-
-- **Framework:** React.js / Next.js
-- **UI Library:** Tailwind CSS & Shadcn/UI
-- **Charts:** Recharts / Chart.js
-
-### Công cụ hỗ trợ (DevOps Tools)
-
-- **SBOM Generation:** Syft, Trivy
-- **Containerization:** Docker & Docker Compose
-
-## Kiến trúc hệ thống
+Nền tảng được thiết kế theo mô hình 3 lớp đồng bộ:
 
 ```text
-[Source Code/Images] --> [CI/CD Pipeline] --> [SBOM Generator (Syft/Trivy)]
-                                                    |
-                                                    v
-[User Interface] <--> [REST API Server] <--> [SBOM Parser Module]
-                            |                       |
-                    [PostgreSQL DB] <------> [Vulnerability DB (NVD/GitHub)]
+[ Developer ] --(git push)--> [ GitHub Actions / Pipeline ]
+                                       |
+                                [ SBOM Generation ] --(Syft/Trivy Scanners)
+                                       |
+                                 (POST .json)
+                                       v
+[ Dashboard ] <------------> [ API Aggregator ] <--------> [ PostgreSQL ]
+(React/Consumer)             (NodeJS/Express)            (Normalized Schema)
+      ^                             |                            |
+      |                      [ Parser Module ] <---(Vulnerability Data)---
 ```
 
-## Yêu cầu hệ thống (Prerequisites)
+## 🚀 Tính năng chính
 
-- **Node.js**: Phiên bản 18.x trở lên
-- **PostgreSQL**: Phiên bản 14.x trở lên
-- **Docker & Docker Compose** (Khuyến khích nếu muốn thiết lập nhanh qua Container)
+- **SBOM Aggregator:** Tiếp nhận tự động dữ liệu từ Pipeline hoặc Upload thủ công (Hỗ trợ CycloneDX 1.5, SPDX 2.3).
+- **Inventory Management:** Quản lý chi tiết linh kiện: Supplier, Version, PURL, License, Support Level.
+- **Security Insights:** Tự động ánh xạ CVE và hiển thị biểu đồ mức độ nghiêm trọng của lỗ hổng.
+- **Dependency Tree:** Trực quan hóa mối quan hệ phụ thuộc đa tầng (Transitive Dependencies).
+- **Compliance Tracking:** Theo dõi tính tuân thủ giấy phép mã nguồn mở và vòng đời sản phẩm.
 
-## Hướng dẫn cài đặt (Installation)
+## 💻 Công nghệ sử dụng
 
-1. **Clone repository:**
+| Thành phần     | Công nghệ                                         |
+| :------------- | :------------------------------------------------ |
+| **Frontend**   | ReactJS, TypeScript, Vite, Tailwind CSS, Recharts |
+| **Backend**    | Node.js (Express), TypeScript, Multer             |
+| **Database**   | PostgreSQL (Relational Mapping cho SBOM Metadata) |
+| **DevOps**     | Docker, Docker Compose, GitHub Actions            |
+| **SBOM Tools** | Syft (Generator), Grype/Trivy (Vulnerability DB)  |
 
-   ```bash
-   git clone https://github.com/your-username/SBOM-Management.git
-   cd SBOM-Management
-   ```
-
-2. **Cài đặt thư viện (Dependencies):**
-   - Dành cho Backend:
-     ```bash
-     cd backend
-     npm install
-     ```
-   - Dành cho Frontend:
-     ```bash
-     cd frontend
-     npm install
-     ```
-
-3. **Thiết lập biến môi trường (Environment Variables):**
-   - Copy file `.env.example` thành `.env` trong cả 2 thư mục `backend` và `frontend`.
-   - Cập nhật thông tin kết nối cơ sở dữ liệu PostgreSQL trong `.env` của backend.
-
-4. **Khởi chạy ứng dụng:**
-   - Khởi động Backend:
-     ```bash
-     npm run dev
-     ```
-   - Khởi động Frontend:
-     ```bash
-     npm run dev
-     ```
-
-## Hướng dẫn sử dụng (Usage)
-
-- Truy cập giao diện web của ứng dụng.
-- Tại trang Dashboard, chọn **Upload SBOM** để tải lên file SBOM định dạng JSON hoặc XML (SPDX/CycloneDX).
-- Theo dõi màn hình danh sách các thành phần (Inventory) và các rủi ro bảo mật (Vulnerabilities).
-- _Tích hợp CI/CD_: Mở tài liệu API (Swagger UI) để lấy endpoint upload SBOM phục vụ tự động hóa trong pipeline.
-
-## Cấu trúc thư mục (Project Structure)
+## 📦 Cấu trúc Mã nguồn
 
 ```text
 SBOM-Management/
-├── backend/                 # Máy chủ REST API (Node.js/Express)
+├── backend/                  # Lớp Trung tâm (Aggregator Server)
 │   ├── src/
-│   │   ├── controllers/     # Xử lý logic của các request và response
-│   │   ├── models/          # Định nghĩa cấu trúc dữ liệu mapping với PostgreSQL
-│   │   ├── routes/          # Khai báo các endpoint API (Upload, Inventory, Vulnerabilities)
-│   │   ├── services/        # Xử lý business logic (như phân tích file SBOM)
-│   │   └── utils/           # Các hàm hỗ trợ, tiện ích dùng chung
-│   ├── .env.example         # Mẫu khai báo biến môi trường cho backend
-│   └── package.json         # Khai báo dependencies của backend
-├── frontend/                # Giao diện Web (React.js/Next.js)
+│   │   ├── models/           # Schema PostgreSQL (Metadata, Component, Vulnerability...)
+│   │   ├── services/         # Logic Parser & Thuật toán Drift Analysis
+│   │   └── index.ts          # API Endpoints cho DevOps Integration
+├── frontend/                 # Lớp Hiển thị (Consumer Dashboard)
 │   ├── src/
-│   │   ├── app/ (hoặc pages) # Tổ chức định tuyến (Routing) màn hình
-│   │   ├── components/      # Các UI component có thể tái sử dụng (Biểu đồ, Bảng, Nút bấm...)
-│   │   ├── hooks/           # Các custom React hooks
-│   │   └── lib/             # Cấu hình API client, thư viện ngoài
-│   ├── .env.example         # Mẫu khai báo biến môi trường cho frontend
-│   └── package.json         # Khai báo dependencies của frontend
-├── docs/                    # Tài liệu thiết kế hệ thống, cấu trúc database & API doc
-├── docker-compose.yml       # File cấu hình đóng gói toàn bộ hệ thống (DB, Backend, Frontend)
-└── README.md                # File hướng dẫn chung của dự án
+│   │   ├── components/       # ComponentTable, DependencyTree, RiskCharts
+│   │   └── types/            # Strict Type definitions cho chuẩn SBOM
+├── .github/workflows/        # Cấu hình CI/CD tự động trích xuất SBOM
+├── docker-compose.yml        # Đóng gói và triển khai hệ thống
+└── README.md                 # Tài liệu mô tả dự án
 ```
 
-## Tài liệu tham khảo
+## 🛠 Cài đặt & Khởi chạy
 
-- [CycloneDX Specification](https://cyclonedx.org/)
-- [SPDX Specification](https://spdx.dev/)
-- [NVD - National Vulnerability Database](https://nvd.nist.gov/)
+**Khởi động môi trường (Docker):**
 
-## Đóng góp & Bản quyền (License)
+```bash
+docker-compose up -d
+```
 
-- Dự án thuộc Đồ án Nghiên cứu Tốt nghiệp (HUST).
-- MIT License.
+**Cài đặt thủ công (Nếu không dùng Docker):**
 
-## Liên hệ
+- **Backend:**
+  ```bash
+  cd backend && npm install && npm run dev
+  ```
+- **Frontend:**
+  ```bash
+  cd frontend && npm install && npm run dev
+  ```
 
-- **Sinh viên:** Nguyễn Nhật Minh
-- **Email:** [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
-- **GitHub:** [Minh20235781](https://github.com/Minh20235781)
+_Lưu ý: Cấu hình tệp `.env` dựa trên `.env.example` để kết nối với cơ sở dữ liệu PostgreSQL._
+
+## 📖 Tài liệu tham khảo
+
+- SPDX (ISO/IEC 5962:2021)
+- CycloneDX v1.5 Specification
+- BOMs Away! A Comprehensive Study of Bills of Materials (ICSE 2024)
+
+---
+
+**Bản quyền:** Dự án phục vụ mục đích học thuật tại Đại học Bách khoa Hà Nội (HUST).
+
+**Liên hệ:**
+
+- Sinh viên: Nguyễn Nhật Minh
+- Email: [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
+- GitHub: [Minh20235781](https://github.com/Minh20235781)

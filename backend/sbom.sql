@@ -115,3 +115,14 @@ CREATE TABLE definition
     services VARCHAR,
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
 );
+
+-- Bảng Service
+CREATE TABLE service
+(
+    service_id SERIAL PRIMARY KEY,
+    sbom_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    version VARCHAR(100),
+    description VARCHAR,
+    FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+);
