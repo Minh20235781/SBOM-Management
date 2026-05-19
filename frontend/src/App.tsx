@@ -398,27 +398,6 @@ function App() {
                 </div>
               </div>
             </div>
-
-            {/* Phân bổ theo môi trường - Đưa xuống dưới */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-2xl">
-                <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-500" /> Phân bổ theo môi trường
-                </h3>
-                <div className="space-y-5">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Production</span><span className="font-bold text-slate-700">1,842</span></div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '60%' }}></div></div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Staging</span><span className="font-bold text-slate-700">1,024</span></div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-400 h-1.5 rounded-full" style={{ width: '35%' }}></div></div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Dev</span><span className="font-bold text-slate-700">724</span></div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-slate-300 h-1.5 rounded-full" style={{ width: '20%' }}></div></div>
-                  </div>
-                </div>
-            </div>
             </>
             )}
 
