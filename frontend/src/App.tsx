@@ -17,154 +17,68 @@ function App() {
   const [metadata, setMetadata] = useState<SBOMMetadata | null>(null);
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
 
-  const handleUploadSuccess = (rawData: unknown) => {
-    const data = rawData as Record<string, unknown>;
-    
-    // Kiểm tra SPDX
-    if (data.spdxVersion || data.SPDXID) {
-      const packages = data.packages as Array<Record<string, unknown>> | undefined;
-      const creationInfo = data.creationInfo as Record<string, unknown> | undefined;
-      
-      const sbomId = (data.documentNamespace as string) || (data.SPDXID as string) || 'manual-upload-spdx';
-      const creators = creationInfo?.creators as string[] | undefined;
-      const toolComponents = creators?.filter(c => c.startsWith('Tool:')).join(', ') || 'N/A';
-      const auts = creators?.filter(c => !c.startsWith('Tool:')).join(', ') || 'N/A';
-      
-      setMetadata({
-        sbom_id: sbomId,
-        authors: auts,
-        created_timestamp: (creationInfo?.created as string) || new Date().toISOString(),
-        tool_components: toolComponents,
-        tool_services: 'N/A',
-        lifecycle_phase: 'N/A'
+  const handleUploadSuccess = async (rawData: unknown) => {
+    try {
+      const response = await fetch('http://localhost:5000/api/sboms/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rawData)
       });
-
-      if (Array.isArray(packages)) {
-        const mappedComponents: SBOMComponent[] = packages.map((pkg) => {
-          const externalRefs = pkg.externalRefs as Array<Record<string, unknown>> | undefined;
-          const purlRef = externalRefs?.find((ref) => ref.referenceType === 'purl');
-
-          return {
-            component_id: (pkg.SPDXID as string) || Math.random().toString(36).substr(2, 9),
-            sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
-            name: (pkg.name as string) || 'Unknown',
-            version: pkg.versionInfo as string | undefined,
-            purl: purlRef ? (purlRef.referenceLocator as string) : undefined,
-            licenses: pkg.licenseConcluded !== 'NOASSERTION' ? (pkg.licenseConcluded as string) : (pkg.licenseDeclared !== 'NOASSERTION' ? (pkg.licenseDeclared as string) : 'N/A'),
-          };
-        });
-        setComponents(mappedComponents);
-        // SPDX thường không nhúng kèm dữ liệu lỗ hổng giống CycloneDX mặc định
-        setVulnerabilities([]);
-
-        const relationships = data.relationships as Array<{ spdxElementId: string, relatedSpdxElement: string, relationshipType: string }> | undefined;
-        if (relationships) {
-          const mappedDeps: Dependency[] = [];
-          let idCounter = 1;
-          relationships.forEach(rel => {
-            // Mở rộng thêm các quan hệ của SPDX để bắt được hết cây (vì một số scanner dùng chiều ngược lại như DEPENDENCY_OF)
-            if (['DEPENDS_ON', 'CONTAINS', 'DYNAMIC_LINK', 'STATIC_LINK', 'DESCRIBES', 'HAS_PREREQUISITE'].includes(rel.relationshipType)) {
-              mappedDeps.push({
-                dependency_id: idCounter++,
-                sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
-                component_ref: rel.spdxElementId,
-                depends_on_ref: rel.relatedSpdxElement,
-              });
-            } else if (['DEPENDENCY_OF', 'CONTAINED_BY', 'DESCRIBED_BY', 'PREREQUISITE_FOR'].includes(rel.relationshipType)) {
-              // Quan hệ ngược: B là DEPENDENCY_OF của A => A phụ thuộc B
-              mappedDeps.push({
-                dependency_id: idCounter++,
-                sbom_id: (data.documentNamespace as string) || 'manual-upload-spdx',
-                component_ref: rel.relatedSpdxElement,
-                depends_on_ref: rel.spdxElementId,
-              });
-            }
-          });
-          setDependencies(mappedDeps);
-        } else {
-          setDependencies([]);
-        }
-      } else {
-        alert("Cấu trúc file SPDX SBOM không hợp lệ (thiếu danh sách packages)!");
-      }
-    } 
-    // Kiểm tra CycloneDX
-    else if (data.bomFormat === "CycloneDX" || data.components) {
-      const componentsList = data.components as Array<Record<string, unknown>>;
-      const metadataObj = data.metadata as Record<string, unknown> | undefined;
-      const serialNumber = (data.serialNumber as string) || 'manual-upload-cyclonedx';
+      const data = await response.json();
       
-      const authorsList = metadataObj?.authors as Array<{ name?: string, email?: string }> | undefined;
-      const parsedAuthors = authorsList?.map(a => `${a.name || ''} ${a.email ? `(${a.email})` : ''}`.trim()).join(', ') || 'N/A';
-      
-      const toolsObj = metadataObj?.tools as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
-      let toolCompsStr = 'N/A';
-      let toolServicesStr = 'N/A';
-      
-      if (Array.isArray(toolsObj)) {
-        toolCompsStr = toolsObj.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
-      } else if (toolsObj) {
-        const tComps = toolsObj.components as Array<{ vendor?: string, name?: string, version?: string }> | undefined;
-        if (tComps) {
-          toolCompsStr = tComps.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
-        }
-        const tServices = toolsObj.services as Array<{ vendor?: string, name?: string, version?: string, endpoints?: string[] }> | undefined;
-        if (tServices) {
-          toolServicesStr = tServices.map(t => `${t.vendor || ''} ${t.name || ''} ${t.version || ''}`.trim()).join(', ') || 'N/A';
-        }
-      }
+      if (data.success) {
+        const sbomId = data.sbomId;
+        // Fetch metadata
+        const metaRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}`);
+        const metaData = await metaRes.json();
+        setMetadata(metaData);
 
-      setMetadata({
-        sbom_id: serialNumber,
-        authors: parsedAuthors,
-        created_timestamp: (metadataObj?.timestamp as string) || new Date().toISOString(),
-        tool_components: toolCompsStr,
-        tool_services: toolServicesStr,
-        lifecycle_phase: 'N/A' // Default for CycloneDX, can be extracted from lifecycles if needed
-      });
+        // Fetch components
+        const compRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/components`);
+        const compData = await compRes.json();
+        setComponents(compData);
 
-      const mappedComponents: SBOMComponent[] = componentsList.map((c) => {
-        const licenses = c.licenses as Array<{ license?: { id?: string; name?: string } }> | undefined;
+        // Fetch dependencies
+        const depRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/dependencies`);
+        const depData = await depRes.json();
+        setDependencies(depData);
         
-        return {
-          component_id: (c['bom-ref'] as string) || Math.random().toString(36).substr(2, 9),
-          sbom_id: (data.serialNumber as string) || 'manual-upload',
-          name: (c.name as string) || 'Unknown',
-          version: c.version as string | undefined,
-          purl: c.purl as string | undefined,
-          licenses: licenses?.[0]?.license?.id || licenses?.[0]?.license?.name || 'N/A',
+        // Fetch vulnerabilities
+        const vulnRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/vulnerabilities`);
+        const vulnData = await vulnRes.json();
+        
+        // Map backend vulnerability model to CycloneDXVulnerability model if needed
+        const mappedVulns = vulnData.map((v: any) => ({
+          id: v.cve_id,
+          description: v.description,
+          ratings: [{ severity: v.severity }],
+          affects: v.affected_component_ref ? [{ ref: v.affected_component_ref }] : []
+        }));
+        
+        // Sắp xếp lỗ hổng ưu tiên cao (Critical, High) lên đầu
+        const severityOrder: Record<string, number> = {
+          'critical': 4,
+          'high': 3,
+          'medium': 2,
+          'low': 1,
+          'info': 0,
+          'unknown': -1
         };
-      });
-      setComponents(mappedComponents);
-
-      if (data.vulnerabilities) {
-        setVulnerabilities(data.vulnerabilities as CycloneDXVulnerability[]);
-      } else {
-        setVulnerabilities([]);
-      }
-
-      if (data.dependencies) {
-        const depsList = data.dependencies as Array<{ ref: string, dependsOn?: string[] }>;
-        const mappedDeps: Dependency[] = [];
-        let idCounter = 1;
-        depsList.forEach(dep => {
-          if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
-            dep.dependsOn.forEach(targetRef => {
-              mappedDeps.push({
-                dependency_id: idCounter++,
-                sbom_id: (data.serialNumber as string) || 'manual-upload',
-                component_ref: dep.ref,
-                depends_on_ref: targetRef,
-              });
-            });
-          }
+        
+        mappedVulns.sort((a: any, b: any) => {
+          const sA = (a.ratings[0]?.severity || 'unknown').toLowerCase();
+          const sB = (b.ratings[0]?.severity || 'unknown').toLowerCase();
+          return (severityOrder[sB] || -1) - (severityOrder[sA] || -1);
         });
-        setDependencies(mappedDeps);
+
+        setVulnerabilities(mappedVulns);
+        
       } else {
-        setDependencies([]);
+        alert("Upload failed: " + data.error);
       }
-    } else {
-      alert("Cấu trúc file SBOM không hợp lệ (Không nhận diện được định dạng CycloneDX hoặc SPDX)!");
+    } catch (e) {
+      console.error(e);
+      alert("Error calling backend API");
     }
   };
 
@@ -422,22 +336,23 @@ function App() {
                 </div>
             </div>
 
-            {/* Khối 3: Mock Data (Lỗ hổng & Phân bổ) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Bảng Mock Lỗ hổng */}
-              <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
-                  <h3 className="font-bold text-slate-800">Lỗ hổng ưu tiên cao</h3>
-                  <a href="#" className="text-sm text-blue-600 hover:text-blue-700 font-semibold">Xem tất cả →</a>
-                </div>
-                <div className="overflow-x-auto">
+            {/* Khối Lỗ hổng */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-red-500" /> Lỗ hổng ưu tiên cao
+                </h3>
+                <a href="#" className="text-sm text-blue-600 hover:text-blue-700 font-semibold">Xem tất cả →</a>
+              </div>
+              <div className="p-6 bg-slate-50/50">
+                <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[400px]">
                   <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead>
-                      <tr className="text-slate-500 text-xs uppercase tracking-wider font-semibold">
+                    <thead className="sticky top-0 bg-white z-10 shadow-sm">
+                      <tr className="text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
                         <th className="px-6 py-4 font-medium">CVE ID</th>
                         <th className="px-6 py-4 font-medium">Mức độ</th>
                         <th className="px-6 py-4 font-medium">Thành phần</th>
+                        <th className="px-6 py-4 font-medium w-1/2">Mô tả chi tiết</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -455,23 +370,26 @@ function App() {
                           const affectedComponent = components.find(c => c.component_id === affectedRef)?.name || affectedRef;
 
                           return (
-                            <tr key={vuln.id || idx}>
-                              <td className="px-6 py-4 font-mono text-slate-600 bg-slate-50/50">{vuln.id || 'N/A'}</td>
-                              <td className="px-6 py-4 bg-slate-50/50">
+                            <tr key={vuln.id || idx} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-mono text-slate-600 font-medium">{vuln.id || 'N/A'}</td>
+                              <td className="px-6 py-4">
                                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${severityColor}`}>
                                   {severityText}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 bg-slate-50/50 font-medium text-slate-700">{affectedComponent}</td>
+                              <td className="px-6 py-4 font-medium text-slate-700">{affectedComponent}</td>
+                              <td className="px-6 py-4 text-slate-500 whitespace-normal text-xs min-w-[300px]">
+                                {vuln.description ? (vuln.description.length > 150 ? vuln.description.substring(0, 150) + '...' : vuln.description) : 'N/A'}
+                              </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
-                            <ShieldAlert className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                            <p>Không tìm thấy lỗ hổng nào trong file SBOM hiện tại.</p>
-                            <p className="text-xs text-slate-400 mt-1">Sử dụng Grype ở Backend để quét tự động.</p>
+                          <td colSpan={4} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
+                            <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-slate-300 opacity-60" />
+                            <p className="font-medium text-slate-600">Không tìm thấy lỗ hổng nào trong SBOM cục bộ</p>
+                            <p className="text-xs text-slate-400 mt-1">File an toàn hoặc công cụ chưa đính kèm dữ liệu quét.</p>
                           </td>
                         </tr>
                       )}
@@ -479,25 +397,27 @@ function App() {
                   </table>
                 </div>
               </div>
+            </div>
 
-              {/* Phân bổ theo môi trường */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                  <h3 className="font-bold text-slate-800 mb-6">Phân bổ theo môi trường</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Production</span><span className="font-bold text-slate-700">1,842</span></div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '60%' }}></div></div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Staging</span><span className="font-bold text-slate-700">1,024</span></div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-400 h-1.5 rounded-full" style={{ width: '35%' }}></div></div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Dev</span><span className="font-bold text-slate-700">724</span></div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-slate-300 h-1.5 rounded-full" style={{ width: '20%' }}></div></div>
-                    </div>
+            {/* Phân bổ theo môi trường - Đưa xuống dưới */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-2xl">
+                <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-500" /> Phân bổ theo môi trường
+                </h3>
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Production</span><span className="font-bold text-slate-700">1,842</span></div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '60%' }}></div></div>
                   </div>
-              </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Staging</span><span className="font-bold text-slate-700">1,024</span></div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-blue-400 h-1.5 rounded-full" style={{ width: '35%' }}></div></div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-600 font-medium">Dev</span><span className="font-bold text-slate-700">724</span></div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-slate-300 h-1.5 rounded-full" style={{ width: '20%' }}></div></div>
+                  </div>
+                </div>
             </div>
             </>
             )}
