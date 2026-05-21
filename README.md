@@ -14,7 +14,7 @@
 
 ## Giới thiệu
 
-Trong kỷ nguyên chuyển đổi số, an ninh chuỗi cung ứng phần mềm trở nên cấp thiết hơn bao giờ hết. **S-Track** là nền tảng quản lý tập trung thông tin hệ thống, đóng vai trò như một "Hộ chiếu linh kiện" cho phần mềm. Bằng cách ứng dụng tiêu chuẩn SBOM, hệ thống cho phép tự động hóa việc theo dõi các thành phần mã nguồn mở, phụ thuộc bắc cầu và rủi ro an ninh trong suốt vòng đời DevSecOps.
+Trong kỷ nguyên chuyển đổi số, an ninh chuỗi cung ứng phần mềm trở nên cấp thiết hơn bao giờ hết. **SBOM-Management** là nền tảng quản lý tập trung thông tin hệ thống, đóng vai trò như một "Hộ chiếu linh kiện" cho phần mềm. Bằng cách ứng dụng tiêu chuẩn SBOM, hệ thống cho phép tự động hóa việc theo dõi các thành phần mã nguồn mở, phụ thuộc bắc cầu và rủi ro an ninh trong suốt vòng đời DevSecOps.
 
 **Mục tiêu cốt lõi:**
 
