@@ -1,9 +1,11 @@
-import { useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from 'react';
+import Systems from './components/Systems';
 import SBOMUpload from './components/SBOMUpload';
 import ComponentTable from './components/ComponentTable';
 import DependencyTree from './components/DependencyTree';
 import Dashboard from './components/Dashboard';
-import { type SBOMComponent, type CycloneDXVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
+import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
@@ -12,17 +14,35 @@ import {
 
 function App() {
   const [components, setComponents] = useState<SBOMComponent[]>([]);
-  const [vulnerabilities, setVulnerabilities] = useState<CycloneDXVulnerability[]>([]);
+  const [vulnerabilities, setVulnerabilities] = useState<BackendVulnerability[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [metadata, setMetadata] = useState<SBOMMetadata | null>(null);
+  const [systems, setSystems] = useState<any[]>([]);
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
 
   const handleUploadSuccess = async (rawData: unknown) => {
     try {
+      let uploadBody: any = rawData;
+      // If caller provided { sbom, systemName }
+      if (rawData && typeof rawData === 'object' && (rawData as any).sbom) {
+        const payload = rawData as any;
+        uploadBody = { sbom: payload.sbom };
+        if (payload.systemName) {
+          // Create or get system
+          const sysRes = await fetch('http://localhost:5000/api/systems', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: payload.systemName })
+          });
+          const sysData = await sysRes.json();
+          uploadBody.system_id = sysData.system_id || sysData.systemId || sysData.id;
+        }
+      }
+
       const response = await fetch('http://localhost:5000/api/sboms/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rawData)
+        body: JSON.stringify(uploadBody)
       });
       const data = await response.json();
       
@@ -46,13 +66,21 @@ function App() {
         // Fetch vulnerabilities
         const vulnRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/vulnerabilities`);
         const vulnData = await vulnRes.json();
-        
-        // Map backend vulnerability model to CycloneDXVulnerability model if needed
+
         const mappedVulns = vulnData.map((v: any) => ({
-          id: v.cve_id,
+          vuln_id: v.vuln_id,
+          sbom_id: v.sbom_id,
+          name: v.name,
+          installed: v.installed,
+          fixed_in: v.fixed_in,
+          package_type: v.package_type,
+          vulnerability: v.vulnerability || v.cve_id,
+          severity: v.severity,
+          epss: typeof v.epss === 'number' ? v.epss : (v.epss ? Number(v.epss) : null),
+          risk: v.risk,
+          cve_id: v.cve_id,
           description: v.description,
-          ratings: [{ severity: v.severity }],
-          affects: v.affected_component_ref ? [{ ref: v.affected_component_ref }] : []
+          affected_component_ref: v.affected_component_ref,
         }));
         
         // Sắp xếp lỗ hổng ưu tiên cao (Critical, High) lên đầu
@@ -66,21 +94,37 @@ function App() {
         };
         
         mappedVulns.sort((a: any, b: any) => {
-          const sA = (a.ratings[0]?.severity || 'unknown').toLowerCase();
-          const sB = (b.ratings[0]?.severity || 'unknown').toLowerCase();
+          const sA = (a.severity || 'unknown').toLowerCase();
+          const sB = (b.severity || 'unknown').toLowerCase();
           return (severityOrder[sB] || -1) - (severityOrder[sA] || -1);
         });
 
         setVulnerabilities(mappedVulns);
+        // Refresh systems list in case upload created a new system
+        try { await fetchSystems(); } catch { /* ignore */ }
         
       } else {
-        alert("Upload failed: " + data.error);
+        alert("Upload failed: " + (data.error || data.message || " Unknown error"));
       }
     } catch (e) {
       console.error(e);
       alert("Error calling backend API");
     }
   };
+
+  const fetchSystems = async () => {
+    try {
+      const res = await fetch('http://localhost:5000/api/systems');
+      if (!res.ok) throw new Error('Failed to fetch systems');
+      const list = await res.json();
+      setSystems(list);
+    } catch (e) {
+      console.error('Failed to load systems', e);
+    }
+  };
+
+  // Load systems on mount
+  useEffect(() => { fetchSystems(); }, []);
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
@@ -226,7 +270,7 @@ function App() {
               </div>
               <div className="text-sm">
                 <p className="font-bold text-slate-700 leading-none">Nguyễn Minh</p>
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">DevOps Engineer</p>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">Developer</p>
               </div>
             </div>
           </div>
@@ -342,23 +386,26 @@ function App() {
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-red-500" /> Lỗ hổng ưu tiên cao
                 </h3>
-                <a href="#" className="text-sm text-blue-600 hover:text-blue-700 font-semibold">Xem tất cả →</a>
               </div>
               <div className="p-6 bg-slate-50/50">
                 <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[400px]">
                   <table className="w-full text-left text-sm whitespace-nowrap">
                     <thead className="sticky top-0 bg-white z-10 shadow-sm">
                       <tr className="text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
-                        <th className="px-6 py-4 font-medium">CVE ID</th>
-                        <th className="px-6 py-4 font-medium">Mức độ</th>
-                        <th className="px-6 py-4 font-medium">Thành phần</th>
-                        <th className="px-6 py-4 font-medium w-1/2">Mô tả chi tiết</th>
+                        <th className="px-6 py-4 font-medium">NAME</th>
+                        <th className="px-6 py-4 font-medium">INSTALLED</th>
+                        <th className="px-6 py-4 font-medium">FIXED IN</th>
+                        <th className="px-6 py-4 font-medium">TYPE</th>
+                        <th className="px-6 py-4 font-medium">VULNERABILITY</th>
+                        <th className="px-6 py-4 font-medium">SEVERITY</th>
+                        <th className="px-6 py-4 font-medium">EPSS</th>
+                        <th className="px-6 py-4 font-medium">RISK</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {vulnerabilities.length > 0 ? (
                         vulnerabilities.map((vuln, idx) => {
-                          const severity = vuln.ratings?.[0]?.severity || 'unknown';
+                          const severity = vuln.severity || 'unknown';
                           let severityColor = "bg-slate-50 text-slate-700 border-slate-200";
                           let severityText = severity;
                           if (severity.toLowerCase() === 'critical') { severityColor = "text-red-700 bg-red-50 border-red-100"; severityText="Nghiêm trọng"; }
@@ -366,27 +413,30 @@ function App() {
                           else if (severity.toLowerCase() === 'medium') { severityColor = "text-blue-700 bg-blue-50 border-blue-100"; severityText="Trung bình"; }
                           else if (severity.toLowerCase() === 'low') { severityColor = "text-emerald-700 bg-emerald-50 border-emerald-100"; severityText="Thấp"; }
 
-                          const affectedRef = vuln.affects?.[0]?.ref || 'Unknown';
-                          const affectedComponent = components.find(c => c.component_id === affectedRef)?.name || affectedRef;
+                          const epssText = vuln.epss !== null && vuln.epss !== undefined
+                            ? `${(vuln.epss * 100).toFixed(1)}%`
+                            : 'N/A';
 
                           return (
-                            <tr key={vuln.id || idx} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-mono text-slate-600 font-medium">{vuln.id || 'N/A'}</td>
+                            <tr key={vuln.vuln_id || idx} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-medium text-slate-700">{vuln.name || 'N/A'}</td>
+                              <td className="px-6 py-4 text-slate-700">{vuln.installed || 'N/A'}</td>
+                              <td className="px-6 py-4 text-slate-700">{vuln.fixed_in || 'N/A'}</td>
+                              <td className="px-6 py-4 text-slate-700">{vuln.package_type || 'N/A'}</td>
+                              <td className="px-6 py-4 font-mono text-slate-600 font-medium">{vuln.vulnerability || vuln.cve_id || 'N/A'}</td>
                               <td className="px-6 py-4">
                                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${severityColor}`}>
                                   {severityText}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 font-medium text-slate-700">{affectedComponent}</td>
-                              <td className="px-6 py-4 text-slate-500 whitespace-normal text-xs min-w-[300px]">
-                                {vuln.description ? (vuln.description.length > 150 ? vuln.description.substring(0, 150) + '...' : vuln.description) : 'N/A'}
-                              </td>
+                              <td className="px-6 py-4 text-slate-700">{epssText}</td>
+                              <td className="px-6 py-4 text-slate-700">{vuln.risk || 'N/A'}</td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={4} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
+                          <td colSpan={8} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
                             <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-slate-300 opacity-60" />
                             <p className="font-medium text-slate-600">Không tìm thấy lỗ hổng nào trong SBOM cục bộ</p>
                             <p className="text-xs text-slate-400 mt-1">File an toàn hoặc công cụ chưa đính kèm dữ liệu quét.</p>
@@ -401,7 +451,12 @@ function App() {
             </>
             )}
 
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && (
+            {activeMenu === 'system' && (
+              // Lazy-load Systems component to keep App simple
+              <Systems systems={systems} refresh={fetchSystems} />
+            )}
+
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && (
               <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
                 <Activity className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>

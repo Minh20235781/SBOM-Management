@@ -7,6 +7,33 @@ import { v4 as uuidv4 } from 'uuid';
 
 const execFilePromise = util.promisify(execFile);
 
+const extractNumericEpss = (epssValue: any): number | null => {
+  if (typeof epssValue === 'number' && Number.isFinite(epssValue)) {
+    return epssValue;
+  }
+
+  if (typeof epssValue === 'string') {
+    const parsed = Number.parseFloat(epssValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (Array.isArray(epssValue)) {
+    for (const item of epssValue) {
+      const extracted = extractNumericEpss(item);
+      if (extracted !== null) {
+        return extracted;
+      }
+    }
+    return null;
+  }
+
+  if (epssValue && typeof epssValue === 'object') {
+    return extractNumericEpss(epssValue.epss);
+  }
+
+  return null;
+};
+
 export const scanSBOMWithGrype = async (sbomData: any): Promise<any[]> => {
   const tempId = uuidv4();
   const tempFilePath = path.join(os.tmpdir(), `sbom-${tempId}.json`);
@@ -35,11 +62,20 @@ export const scanSBOMWithGrype = async (sbomData: any): Promise<any[]> => {
          affectedRef = match.artifact.id;
       }
       
+      const artifact = match.artifact || {};
       const vulnInfo = match.vulnerability || {};
+      const fixVersions = Array.isArray(vulnInfo.fix?.versions) ? vulnInfo.fix.versions : [];
       
       return {
+        name: artifact.name || null,
+        installed: artifact.version || null,
+        fixed_in: fixVersions[0] || null,
+        package_type: artifact.type || null,
+        vulnerability: vulnInfo.id || 'UNKNOWN',
         cve_id: vulnInfo.id || 'UNKNOWN',
         severity: vulnInfo.severity || 'Unknown',
+        epss: extractNumericEpss(vulnInfo.epss ?? vulnInfo.score),
+        risk: vulnInfo.risk || vulnInfo.riskScore || null,
         // Lấy description ưu tiên từ vulnInfo, nếu không có lấy từ relatedVulnerabilities
         description: vulnInfo.description || match.relatedVulnerabilities?.[0]?.description || '',
         affected_component_ref: affectedRef,

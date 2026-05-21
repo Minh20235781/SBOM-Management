@@ -4,6 +4,7 @@ CREATE TABLE sbom_metadata
     sbom_id VARCHAR(255) PRIMARY KEY,
     authors VARCHAR,
     created_timestamp TIMESTAMP,
+    system_id INTEGER,
     tool_components VARCHAR,
     tool_services VARCHAR,
     lifecycle_phase VARCHAR(100)
@@ -43,9 +44,16 @@ CREATE TABLE vulnerability
 (
     vuln_id SERIAL PRIMARY KEY,
     sbom_id VARCHAR(255) NOT NULL,
-    cve_id VARCHAR(100) NOT NULL,
-    description VARCHAR,
+    name VARCHAR(255),
+    installed VARCHAR(100),
+    fixed_in VARCHAR(100),
+    package_type VARCHAR(100),
+    vulnerability VARCHAR(255),
     severity VARCHAR(50),
+    epss NUMERIC(6,5),
+    risk VARCHAR(50),
+    cve_id VARCHAR(100),
+    description VARCHAR,
     affected_component_ref VARCHAR(255),
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE,
     FOREIGN KEY (affected_component_ref) REFERENCES component(component_id)
@@ -125,4 +133,15 @@ CREATE TABLE service
     version VARCHAR(100),
     description VARCHAR,
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+);
+
+-- Bảng System để lưu các hệ thống / project
+CREATE TABLE
+IF NOT EXISTS system
+(
+    system_id SERIAL PRIMARY KEY,
+    name VARCHAR
+(255) UNIQUE NOT NULL,
+    description TEXT,
+    created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

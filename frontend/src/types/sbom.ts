@@ -30,6 +30,22 @@ export interface CycloneDXVulnerability {
   }>;
 }
 
+export interface BackendVulnerability {
+  vuln_id: number;
+  sbom_id: string;
+  name?: string | null;
+  installed?: string | null;
+  fixed_in?: string | null;
+  package_type?: string | null;
+  vulnerability?: string | null;
+  severity?: string | null;
+  epss?: number | null;
+  risk?: string | null;
+  cve_id?: string | null;
+  description?: string | null;
+  affected_component_ref?: string | null;
+}
+
 export interface CycloneDXRaw {
   bomFormat: string;
   specVersion: string;
@@ -94,8 +110,15 @@ export interface Vulnerability {
   vuln_id: number;
   sbom_id: string;
   cve_id: string;
+  name?: string;
+  installed?: string;
+  fixed_in?: string;
+  package_type?: string;
+  vulnerability?: string;
   description?: string;
   severity?: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
+  epss?: number;
+  risk?: string;
   affected_component_ref?: string;
 }
 

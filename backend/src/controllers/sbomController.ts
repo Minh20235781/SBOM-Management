@@ -10,7 +10,23 @@ export const sbomController = {
         return res.status(400).json({ error: 'No data provided' });
       }
       await client.query('BEGIN');
-      const sbomId = await parseAndSaveSBOM(client, req.body);
+      // Support payload: { sbom: <object>, system_id: <int> } or raw SBOM object
+      const payload = (req.body && req.body.sbom) ? req.body : { sbom: req.body };
+      // If caller provided systemName instead of system_id, create/find it server-side
+      const providedSystemName = (req.body && (req.body.systemName || (req.body.sbom && req.body.sbom.systemName)))
+        ? (req.body.systemName || (req.body.sbom && req.body.sbom.systemName))
+        : null;
+      if (!payload.system_id && providedSystemName) {
+        // try find
+        const existing = await pool.query('SELECT * FROM system WHERE name = $1', [providedSystemName]);
+        if (existing.rows.length > 0) {
+          payload.system_id = existing.rows[0].system_id;
+        } else {
+          const ins = await pool.query('INSERT INTO system (name) VALUES ($1) RETURNING *', [providedSystemName]);
+          payload.system_id = ins.rows[0].system_id;
+        }
+      }
+      const sbomId = await parseAndSaveSBOM(client, payload);
       await client.query('COMMIT');
       res.status(201).json({ success: true, sbomId });
     } catch (error) {
