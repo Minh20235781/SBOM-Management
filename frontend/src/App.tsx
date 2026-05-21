@@ -392,6 +392,7 @@ function App() {
                   <table className="w-full text-left text-sm whitespace-nowrap">
                     <thead className="sticky top-0 bg-white z-10 shadow-sm">
                       <tr className="text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                        <th className="px-6 py-4 font-medium">STT</th>
                         <th className="px-6 py-4 font-medium">NAME</th>
                         <th className="px-6 py-4 font-medium">INSTALLED</th>
                         <th className="px-6 py-4 font-medium">FIXED IN</th>
@@ -417,8 +418,9 @@ function App() {
                             ? `${(vuln.epss * 100).toFixed(1)}%`
                             : 'N/A';
 
-                          return (
+                            return (
                             <tr key={vuln.vuln_id || idx} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-mono text-slate-700">{idx + 1}</td>
                               <td className="px-6 py-4 font-medium text-slate-700">{vuln.name || 'N/A'}</td>
                               <td className="px-6 py-4 text-slate-700">{vuln.installed || 'N/A'}</td>
                               <td className="px-6 py-4 text-slate-700">{vuln.fixed_in || 'N/A'}</td>
@@ -436,7 +438,7 @@ function App() {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={8} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
+                          <td colSpan={9} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
                             <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-slate-300 opacity-60" />
                             <p className="font-medium text-slate-600">Không tìm thấy lỗ hổng nào trong SBOM cục bộ</p>
                             <p className="text-xs text-slate-400 mt-1">File an toàn hoặc công cụ chưa đính kèm dữ liệu quét.</p>

@@ -11,6 +11,7 @@ const ComponentTable: React.FC<Props> = ({ components }) => {
       <table className="w-full text-left text-sm text-slate-700">
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
           <tr>
+            <th className="px-6 py-4 font-semibold">STT</th>
             <th className="px-6 py-4 font-semibold">Tên thành phần</th>
             <th className="px-6 py-4 font-semibold">Phiên bản</th>
             <th className="px-6 py-4 font-semibold">Giấy phép</th>
@@ -18,8 +19,9 @@ const ComponentTable: React.FC<Props> = ({ components }) => {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {components.map((c) => (
+          {components.map((c, idx) => (
             <tr key={c.component_id} className="hover:bg-slate-50/50 transition-colors">
+              <td className="px-6 py-4 font-mono text-slate-700">{idx + 1}</td>
               <td className="px-6 py-4 font-medium text-slate-800">{c.name}</td>
               <td className="px-6 py-4">{c.version || 'N/A'}</td>
               <td className="px-6 py-4">

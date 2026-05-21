@@ -29,4 +29,23 @@ export const systemController = {
       next(err);
     }
   }
+,
+  delete: async (req: Request, res: Response, next: NextFunction) => {
+    const id = Number(req.params.id);
+    if (!id || Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM sbom_metadata WHERE system_id = $1', [id]);
+      const result = await client.query('DELETE FROM system WHERE system_id = $1 RETURNING *', [id]);
+      await client.query('COMMIT');
+      if (result.rowCount === 0) return res.status(404).json({ error: 'System not found' });
+      res.json({ deleted: true, system: result.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      next(err);
+    } finally {
+      client.release();
+    }
+  }
 };

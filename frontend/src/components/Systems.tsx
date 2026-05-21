@@ -10,11 +10,16 @@ type System = {
 type Props = {
   systems: System[];
   refresh: () => void;
+  onDelete?: (system_id: number) => void | Promise<void>; // Thêm hàm callback xử lý sự kiện xóa từ component cha
 };
 
-const Systems: React.FC<Props> = ({ systems, refresh }) => {
+
+const Systems: React.FC<Props> = ({ systems, refresh, onDelete }) => {
+  const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState('');
   const [createdDateFilter, setCreatedDateFilter] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -42,7 +47,6 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
     return [...systems]
       .filter(system => {
         const matchesName = !normalizedName || system.name.toLowerCase().includes(normalizedName);
-        // createdDateFilter từ <input type="date"> luôn có dạng 'yyyy-mm-dd'
         const matchesDate = !createdDateFilter || getLocalDateKey(system.created_timestamp) === createdDateFilter;
         
         return matchesName && matchesDate;
@@ -66,6 +70,41 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
     }
   };
 
+  const handleDeleteClick = (id: number, name: string) => {
+    const confirmed = window.confirm(`Bạn có chắc chắn muốn xóa hệ thống "${name}" cùng toàn bộ dữ liệu SBOM liên quan không?`);
+    if (!confirmed) return;
+    // Prefer parent callback if provided, otherwise call API directly
+    (async () => {
+      setDeleteError(null);
+      if (onDelete) {
+        try {
+          setDeletingId(id);
+          await onDelete(id);
+          await refresh();
+        } catch (e: unknown) {
+          setDeleteError(e instanceof Error ? e.message : 'Không thể xóa hệ thống');
+        } finally {
+          setDeletingId(null);
+        }
+        return;
+      }
+
+      setDeletingId(id);
+      try {
+        const res = await fetch(`${API_BASE}/api/systems/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error((body && body.error) ? body.error : `HTTP ${res.status}`);
+        }
+        await refresh();
+      } catch (e: unknown) {
+        setDeleteError(e instanceof Error ? e.message : 'Không thể xóa hệ thống');
+      } finally {
+        setDeletingId(null);
+      }
+    })();
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
       <div className="flex items-center justify-between mb-4">
@@ -85,6 +124,7 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
         Danh sách này được tự động tạo từ SBOM đã tải lên.
       </div>
       {refreshError && <div className="text-sm text-red-600 mb-4">{refreshError}</div>}
+      {deleteError && <div className="text-sm text-red-600 mb-4">{deleteError}</div>}
 
       <div className="mb-4 grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
         <div className="lg:col-span-5">
@@ -137,7 +177,7 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
 
       {systems.length === 0 ? (
         <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50/60">
-          Chưa có hệ thống nào. Tải lên SBOM với tên hệ thống để tạo, hoặc dùng form trên để thêm.
+          Chưa có hệ thống nào. Tải lên SBOM với tên hệ thống để tạo.
         </div>
       ) : filteredSystems.length === 0 ? (
         <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50/60">
@@ -148,10 +188,10 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Uploaded</th>
+                <th className="px-4 py-3 w-16">ID</th>
+                <th className="px-4 py-3">Tên hệ thống</th>
+                <th className="px-4 py-3">Ngày tải lên</th>
+                <th className="px-4 py-3 text-center w-56">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -159,8 +199,17 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
                 <tr key={s.system_id} className="hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-mono text-slate-700">{s.system_id}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
-                  <td className="px-4 py-3 text-slate-700">{s.description || '-'}</td>
                   <td className="px-4 py-3 text-slate-700">{formatDateTimeVN(s.created_timestamp)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(s.system_id, s.name)}
+                      disabled={deletingId === s.system_id}
+                      className={`inline-flex items-center justify-center px-3 py-1 text-xs font-semibold text-rose-600 border border-rose-200 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-700 active:bg-rose-100 transition shadow-sm outline-none ${deletingId === s.system_id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      {deletingId === s.system_id ? 'Đang xóa...' : 'Xóa'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
