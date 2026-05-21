@@ -36,24 +36,15 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
     return `${year}-${month}-${day}`;
   };
 
-  const parseDDMMYYYYToKey = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return '';
-    const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) return '__invalid__';
-    const [, day, month, year] = match;
-    return `${year}-${month}-${day}`;
-  };
-
   const filteredSystems = useMemo(() => {
     const normalizedName = nameFilter.trim().toLowerCase();
-    const normalizedDateKey = parseDDMMYYYYToKey(createdDateFilter);
-    const shouldApplyDateFilter = normalizedDateKey !== '' && normalizedDateKey !== '__invalid__';
 
     return [...systems]
       .filter(system => {
         const matchesName = !normalizedName || system.name.toLowerCase().includes(normalizedName);
-        const matchesDate = !createdDateFilter || (shouldApplyDateFilter && getLocalDateKey(system.created_timestamp) === normalizedDateKey);
+        // createdDateFilter từ <input type="date"> luôn có dạng 'yyyy-mm-dd'
+        const matchesDate = !createdDateFilter || getLocalDateKey(system.created_timestamp) === createdDateFilter;
+        
         return matchesName && matchesDate;
       })
       .sort((left, right) => {
@@ -106,17 +97,16 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
           />
         </div>
         <div className="lg:col-span-4">
-          <label className="block text-xs font-medium text-slate-500 mb-1">Lọc theo ngày tạo</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Lọc theo ngày tải lên</label>
           <input
-            type="text"
+            type="date"
             value={createdDateFilter}
             onChange={event => setCreatedDateFilter(event.target.value)}
-            placeholder="dd/mm/yyyy"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 text-slate-600"
           />
         </div>
         <div className="lg:col-span-3">
-          <label className="block text-xs font-medium text-slate-500 mb-1">Sắp xếp theo ID</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Sắp xếp theo</label>
           <select
             value={sortOrder}
             onChange={event => setSortOrder(event.target.value as 'newest' | 'oldest')}
@@ -161,7 +151,7 @@ const Systems: React.FC<Props> = ({ systems, refresh }) => {
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">Uploaded</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
