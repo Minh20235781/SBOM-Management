@@ -5,7 +5,7 @@ const API_BASE = 'http://localhost:5000/api';
 
 // VỊ TRÍ 1: Định nghĩa interface cho Props ngay trên đầu component
 interface Props {
-  onUploadSuccess: (data: Record<string, unknown>) => void;
+  onUploadSuccess: (data: Record<string, unknown>) => void | Promise<void>;
 }
 
 // VỊ TRÍ 2: Thêm kiểu React.FC<Props> và destructure prop vào tham số của function
@@ -14,6 +14,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
   const [systemName, setSystemName] = useState<string>('');
   const [savingSystem, setSavingSystem] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [pendingSbom, setPendingSbom] = useState<Record<string, unknown> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -27,6 +28,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
         try {
           const json = JSON.parse(event.target?.result as string);
           console.log("Dữ liệu SBOM nhận được:", json);
+          setPendingSbom(json);
 
           // Gọi hàm callback để truyền dữ liệu ngược về App.tsx kèm tên system nếu nhập
           onUploadSuccess({ sbom: json, systemName: systemName && systemName.trim() ? systemName.trim() : undefined });
@@ -62,7 +64,12 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
         }
       }
       if (!res.ok) throw new Error(json.error || json.message || raw || 'Create failed');
-      setSaveMsg('Đã lưu hệ thống');
+      if (pendingSbom) {
+        await Promise.resolve(onUploadSuccess({ sbom: pendingSbom, systemName: name }));
+        setSaveMsg('Đã lưu hệ thống và gắn SBOM vào hệ thống');
+      } else {
+        setSaveMsg('Đã lưu hệ thống');
+      }
     } catch (err: unknown) {
       setSaveMsg(err instanceof Error ? err.message : 'Lỗi khi lưu');
     } finally {
@@ -101,11 +108,11 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
           <label className="text-xs text-slate-500">System name (tùy chọn)</label>
           <input value={systemName} onChange={(e)=>setSystemName(e.target.value)} placeholder="Tên hệ thống để lưu" className="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm" />
         </div>
-        <div className="mt-3">
-          <button type="button" onClick={saveSystem} disabled={savingSystem} className="rounded-full p-2 bg-indigo-500 text-white">
+        <div className="mt-3 flex flex-col items-center">
+          <button type="button" onClick={saveSystem} disabled={savingSystem} className="rounded-full px-4 py-2 bg-indigo-500 text-white">
             {savingSystem ? 'Đang lưu...' : 'Lưu hệ thống'}
           </button>
-          {saveMsg && <p className="text-sm text-slate-500">{saveMsg}</p>}
+          {saveMsg && <p className="mt-2 text-sm text-slate-500">{saveMsg}</p>}
         </div>
       </div>
     </div>

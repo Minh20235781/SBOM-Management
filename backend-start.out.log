@@ -1,0 +1,8 @@
+
+> backend@1.0.0 start
+> node dist/index.js
+
+◇ injected env (7) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+Successfully connected to the PostgreSQL database.
+[server]: Server is running at http://localhost:5000

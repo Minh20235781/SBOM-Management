@@ -5,11 +5,14 @@ import SBOMUpload from './components/SBOMUpload';
 import ComponentTable from './components/ComponentTable';
 import DependencyTree from './components/DependencyTree';
 import Dashboard from './components/Dashboard';
+import SbomSnapshots from './components/SbomSnapshots';
+import SystemSbomDetail from './components/SystemSbomDetail';
 import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
-  GitMerge, Server, Layers, UploadCloud, Info 
+  GitMerge, Server, Layers, UploadCloud, Info,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 
 function App() {
@@ -19,6 +22,14 @@ function App() {
   const [metadata, setMetadata] = useState<SBOMMetadata | null>(null);
   const [systems, setSystems] = useState<any[]>([]);
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedSystemDetail, setSelectedSystemDetail] = useState<any | null>(null);
+
+  const formatMetadataValue = (value?: string | null) => {
+    if (!value) return '-';
+    const normalized = value.trim();
+    return normalized && normalized.toUpperCase() !== 'N/A' ? normalized : '-';
+  };
 
   const handleUploadSuccess = async (rawData: unknown) => {
     try {
@@ -26,7 +37,7 @@ function App() {
       // If caller provided { sbom, systemName }
       if (rawData && typeof rawData === 'object' && (rawData as any).sbom) {
         const payload = rawData as any;
-        uploadBody = { sbom: payload.sbom };
+        uploadBody = { sbom: payload.sbom, systemName: payload.systemName };
         if (payload.systemName) {
           // Create or get system
           const sysRes = await fetch('http://localhost:5000/api/systems', {
@@ -34,6 +45,10 @@ function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: payload.systemName })
           });
+          if (!sysRes.ok) {
+            const errData = await sysRes.json().catch(() => ({}));
+            throw new Error(errData.error || errData.message || 'Không thể tạo hệ thống');
+          }
           const sysData = await sysRes.json();
           uploadBody.system_id = sysData.system_id || sysData.systemId || sysData.id;
         }
@@ -129,7 +144,7 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0">
+      {!sidebarCollapsed && <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0">
         <div className="h-16 flex items-center px-6 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-3">
             <div className="bg-blue-600 p-1.5 rounded-lg shadow-sm shadow-blue-200">
@@ -242,12 +257,20 @@ function App() {
             </nav>
           </div>
         </div>
-      </aside>
+      </aside>}
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Navbar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(value => !value)}
+            title={sidebarCollapsed ? 'Mo sidebar' : 'An sidebar'}
+            className="hidden md:inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition mr-3"
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
           <div className="flex-1 max-w-xl relative">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
@@ -279,7 +302,7 @@ function App() {
         {/* Content Scrollable area */}
         <div className="flex-1 overflow-auto bg-[#fafafa] p-8">
           
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className={`${activeMenu === 'history' ? 'max-w-none' : 'max-w-7xl'} mx-auto space-y-6`}>
 
             {activeMenu === 'dashboard' && <Dashboard />}
 
@@ -327,19 +350,19 @@ function App() {
                   </div>
                   <div className="md:col-span-2">
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Tác giả</p>
-                    <p className="text-sm font-medium text-slate-800">{metadata.authors}</p>
+                    <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.authors)}</p>
                   </div>
                   <div className="md:col-span-2">
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Công cụ tạo (Tools)</p>
-                    <p className="text-sm font-medium text-slate-800">{metadata.tool_components}</p>
+                    <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.tool_components)}</p>
                   </div>
                   <div>
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Dịch vụ (Services)</p>
-                    <p className="text-sm font-medium text-slate-800">{metadata.tool_services}</p>
+                    <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.tool_services)}</p>
                   </div>
                   <div>
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Giai đoạn Vòng đời</p>
-                    <p className="text-sm font-medium text-slate-800">{metadata.lifecycle_phase}</p>
+                    <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.lifecycle_phase)}</p>
                   </div>
                 </div>
               </div>
@@ -384,7 +407,7 @@ function App() {
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-red-500" /> Lỗ hổng ưu tiên cao
+                    <ShieldAlert className="w-4 h-4 text-red-500" /> Các lỗ hổng đã phát hiện
                 </h3>
               </div>
               <div className="p-6 bg-slate-50/50">
@@ -455,10 +478,31 @@ function App() {
 
             {activeMenu === 'system' && (
               // Lazy-load Systems component to keep App simple
-              <Systems systems={systems} refresh={fetchSystems} />
+              <Systems
+                systems={systems}
+                refresh={fetchSystems}
+                onViewDetail={(system) => {
+                  setSelectedSystemDetail(system);
+                  setActiveMenu('system-detail');
+                }}
+              />
             )}
 
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && (
+            {activeMenu === 'system-detail' && selectedSystemDetail && (
+              <SystemSbomDetail
+                system={selectedSystemDetail}
+                onBack={() => {
+                  setSelectedSystemDetail(null);
+                  setActiveMenu('system');
+                }}
+              />
+            )}
+
+            {activeMenu === 'history' && (
+              <SbomSnapshots systems={systems} />
+            )}
+
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && (
               <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
                 <Activity className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>

@@ -41,7 +41,26 @@ export const ensureVulnerabilitySchema = async () => {
         system_id SERIAL PRIMARY KEY,
         name VARCHAR(255) UNIQUE NOT NULL,
         description TEXT,
-        created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_uploaded_at TIMESTAMP
+      );
+    `);
+    await client.query(`
+      ALTER TABLE system
+        ADD COLUMN IF NOT EXISTS description TEXT,
+        ADD COLUMN IF NOT EXISTS last_uploaded_at TIMESTAMP;
+    `);
+    await client.query(`
+      UPDATE system s
+      SET last_uploaded_at = (
+        SELECT MAX(m.created_timestamp)
+        FROM sbom_metadata m
+        WHERE m.system_id = s.system_id
+      )
+      WHERE EXISTS (
+        SELECT 1
+        FROM sbom_metadata m
+        WHERE m.system_id = s.system_id
       );
     `);
 
@@ -64,6 +83,106 @@ export const ensureVulnerabilitySchema = async () => {
         END IF;
       END
       $$;
+    `);
+  } finally {
+    client.release();
+  }
+};
+
+export const ensureSbomAlgorithmSchema = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS project_artifacts (
+        artifact_id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        artifact_path VARCHAR(500) NOT NULL,
+        artifact_name VARCHAR(255),
+        artifact_type VARCHAR(100),
+        content TEXT NOT NULL,
+        hash VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE,
+        UNIQUE (project_id, artifact_path)
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_snapshots (
+        snapshot_id VARCHAR(255) PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        version_number INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        source_type VARCHAR(50) NOT NULL,
+        base_snapshot_id VARCHAR(255),
+        summary JSONB,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE,
+        FOREIGN KEY (base_snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE SET NULL,
+        UNIQUE (project_id, version_number)
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_components (
+        component_id SERIAL PRIMARY KEY,
+        snapshot_id VARCHAR(255) NOT NULL,
+        stable_key VARCHAR(500) NOT NULL,
+        component_ref VARCHAR(255),
+        name VARCHAR(255) NOT NULL,
+        version VARCHAR(100),
+        purl VARCHAR(500),
+        ecosystem VARCHAR(100),
+        supplier_name VARCHAR(255),
+        licenses VARCHAR,
+        hashes VARCHAR,
+        status VARCHAR(30) DEFAULT 'ACTIVE',
+        FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE,
+        UNIQUE (snapshot_id, stable_key)
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_dependencies (
+        dependency_id SERIAL PRIMARY KEY,
+        snapshot_id VARCHAR(255) NOT NULL,
+        source_key VARCHAR(500) NOT NULL,
+        target_key VARCHAR(500) NOT NULL,
+        relationship VARCHAR(100) DEFAULT 'DEPENDS_ON',
+        is_transitive BOOLEAN DEFAULT FALSE,
+        has_cycle BOOLEAN DEFAULT FALSE,
+        FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_artifact_fingerprints (
+        fingerprint_id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        artifact_path VARCHAR(500),
+        artifact_name VARCHAR(255),
+        artifact_type VARCHAR(100),
+        hash VARCHAR(64) NOT NULL,
+        last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        snapshot_id VARCHAR(255) NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE,
+        FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_change_logs (
+        change_id SERIAL PRIMARY KEY,
+        snapshot_id VARCHAR(255) NOT NULL,
+        change_type VARCHAR(30) NOT NULL,
+        entity_type VARCHAR(30) NOT NULL,
+        entity_key VARCHAR(600) NOT NULL,
+        component_name VARCHAR(255),
+        previous_value JSONB,
+        current_value JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE
+      );
     `);
   } finally {
     client.release();

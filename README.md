@@ -118,3 +118,90 @@ _Lưu ý: Cấu hình tệp `.env` dựa trên `.env.example` để kết nối 
 - Sinh viên: Nguyễn Nhật Minh
 - Email: [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
 - GitHub: [Minh20235781](https://github.com/Minh20235781)
+
+## Incremental SBOM & Dependency Graph APIs
+
+### Incremental SBOM generation
+
+Backend now keeps versioned SBOM snapshots per `system.system_id` (used as `projectId`). The algorithm computes SHA-256 artifact fingerprints, normalizes component identity by `purl`, then `ecosystem + name + version`, then `name + version + hash`, compares the newest snapshot with the current SBOM, and writes `ADDED`, `UPDATED`, `REMOVED`, `UNCHANGED` change logs.
+
+New endpoints:
+
+- `POST /api/projects/:projectId/sbom/incremental-generate`
+- `GET /api/projects/:projectId/sbom/snapshots`
+- `GET /api/sbom/snapshots/:snapshotId/changes`
+- `GET /api/sbom/snapshots/:snapshotId/export`
+
+Demo flow:
+
+1. Upload a CycloneDX/SPDX SBOM and assign a system name.
+2. Open `Lich su phien ban`.
+3. Select the system and click `Generate Incremental SBOM`.
+4. Later, call the same endpoint with `{ "sbom": { ... } }` to create an incremental snapshot from changed SBOM data.
+
+### Dependency graph layout
+
+The graph API builds a directed graph from `sbom_dependencies`, adds a project root node, computes depth with BFS, detects cycle edges, and assigns layered coordinates with risk-first sorting.
+
+New endpoint:
+
+- `GET /api/sbom/snapshots/:snapshotId/graph?depth=5&onlyVulnerable=false&search=react`
+
+The frontend component `SbomDependencyGraph.tsx` renders an SVG graph canvas with search, max depth, vulnerable-only filter, legend, and a node detail side panel.
+
+### Algorithm sample tests
+
+```bash
+cd backend
+npm test
+```
+
+The sample test covers initial generation, added dependency, version change, removed dependency, multi-level graph data, cycle input, and vulnerability risk mapping.
+
+## Auto-Generated Incremental SBOM
+
+The auto-generated flow uses the current project state as the source of truth. Old SBOM snapshots are only references for comparison.
+
+Supported project-state inputs:
+
+- `package.json`
+- `package-lock.json`
+- `requirements.txt`
+- `pom.xml`
+- `build.gradle`
+- `Dockerfile`
+
+New artifact APIs:
+
+- `POST /api/projects/:projectId/artifacts`
+- `GET /api/projects/:projectId/artifacts`
+- `POST /api/projects/:projectId/sbom/auto-generate`
+
+Example CI/CD payload:
+
+```json
+{
+  "dependencyFiles": [
+    {
+      "artifactPath": "package.json",
+      "content": "{\"dependencies\":{\"react\":\"^18.0.0\",\"axios\":\"^1.6.0\"}}"
+    },
+    {
+      "artifactPath": "package-lock.json",
+      "content": "{...}"
+    }
+  ]
+}
+```
+
+Backend stores these files in `project_artifacts`, computes SHA-256 fingerprints, extracts dependencies, compares against the latest snapshot, and creates a new snapshot only when artifact fingerprints changed.
+
+Demo:
+
+1. Open `Lich su phien ban`.
+2. Select a system/project.
+3. Upload `package.json` and optional lockfile with `Upload dependency files`.
+4. Snapshot v1 is created from current project dependencies.
+5. Edit `package.json` to add/remove dependencies.
+6. Upload the changed file again.
+7. Snapshot v2 shows `ADDED`, `REMOVED`, `UNCHANGED`, and the graph updates from the new project state.

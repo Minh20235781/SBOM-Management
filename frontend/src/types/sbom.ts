@@ -129,3 +129,70 @@ export interface FullSBOM {
   dependencies: Dependency[];
   vulnerabilities: Vulnerability[];
 }
+
+export interface SbomSnapshot {
+  snapshot_id: string;
+  project_id: number;
+  version_number: number;
+  created_at: string;
+  source_type: 'FULL_SCAN' | 'INCREMENTAL_UPDATE' | 'IMPORT';
+  base_snapshot_id?: string | null;
+  summary?: {
+    totalComponents: number;
+    added: number;
+    updated: number;
+    removed: number;
+    unchanged: number;
+  };
+}
+
+export interface SbomChangeLog {
+  change_id?: number;
+  snapshot_id?: string;
+  change_type: 'ADDED' | 'UPDATED' | 'REMOVED' | 'UNCHANGED';
+  entity_type: 'COMPONENT' | 'DEPENDENCY';
+  entity_key: string;
+  component_name?: string | null;
+}
+
+export interface SbomGraphNode {
+  id: string;
+  label: string;
+  type: 'PROJECT' | 'COMPONENT';
+  ecosystem: string;
+  version?: string | null;
+  license?: string | null;
+  purl?: string | null;
+  supplier?: string | null;
+  hash?: string | null;
+  vulnerabilityCount: number;
+  vulnerabilities?: Array<{ severity?: string | null; id?: string | null }>;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  depth: number;
+  x: number;
+  y: number;
+  hasCycle?: boolean;
+}
+
+export interface SbomGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relationship: 'DEPENDS_ON';
+  isTransitive: boolean;
+  hasCycle?: boolean;
+}
+
+export interface SbomGraphResponse {
+  snapshotId: string;
+  nodes: SbomGraphNode[];
+  edges: SbomGraphEdge[];
+  summary: {
+    nodeCount: number;
+    edgeCount: number;
+    maxDepth: number;
+    cycleDetected: boolean;
+    criticalCount: number;
+    highCount: number;
+  };
+}

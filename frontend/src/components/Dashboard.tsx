@@ -8,10 +8,6 @@ const sparklineData2 = [ { value: 5 }, { value: 5 }, { value: 10 }, { value: 15 
 const sparklineData3 = [ { value: 100 }, { value: 120 }, { value: 110 }, { value: 150 }, { value: 140 }, { value: 250 }, { value: 350 }, { value: 790 } ];
 const sparklineData4 = [ { value: 5000 }, { value: 5200 }, { value: 5100 }, { value: 5800 }, { value: 6000 }, { value: 15000 }, { value: 22000 }, { value: 41978 } ];
 
-const policyData = [
-  { name: '1', value: 0 }, { name: '2', value: 0 }, { name: '3', value: 0 }, { name: '4', value: 1 }
-];
-
 type SbomMeta = { sbom_id: string } & Record<string, any>;
 type SystemRecord = {
   system_id: number;
@@ -22,7 +18,6 @@ type SystemRecord = {
 
 const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [sboms, setSboms] = useState<SbomMeta[]>([]);
   const [systems, setSystems] = useState<SystemRecord[]>([]);
   const [chartData, setChartData] = useState<Array<{ name: string; vulnerabilities: number; sboms: number }>>([]);
   const [totalVulns, setTotalVulns] = useState(0);
@@ -65,7 +60,6 @@ const Dashboard: React.FC = () => {
           systemRes.json(),
         ]);
         if (cancelled) return;
-        setSboms(meta);
         setSystems(systemsData);
 
         // Fetch vulnerabilities/components per SBOM in parallel
