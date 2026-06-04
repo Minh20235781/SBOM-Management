@@ -1,11 +1,33 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/db';
 import { parseAndSaveSBOM } from '../services/sbomParserService';
+import { generateSbomFromGitHubRepo } from '../services/syftGeneratorService';
 
 const getIncomingSbomId = (data: any) => {
   const payload = data && data.sbom ? data.sbom : data;
   if (!payload || typeof payload !== 'object') return null;
   return payload.serialNumber || payload.documentNamespace || payload.SPDXID || null;
+};
+
+const normalizeSystemId = (payload: any) => {
+  if (payload.system_id && typeof payload.system_id === 'string') {
+    const parsedSystemId = Number(payload.system_id);
+    payload.system_id = Number.isInteger(parsedSystemId) && parsedSystemId > 0 ? parsedSystemId : null;
+  }
+};
+
+const findOrCreateSystem = async (client: any, name: string) => {
+  const normalizedName = name.trim();
+  const existing = await client.query('SELECT * FROM system WHERE LOWER(name) = LOWER($1) LIMIT 1', [normalizedName]);
+  if (existing.rows.length > 0) {
+    return existing.rows[0].system_id;
+  }
+
+  const inserted = await client.query(
+    'INSERT INTO system (name, last_uploaded_at) VALUES ($1, NULL) RETURNING *',
+    [normalizedName]
+  );
+  return inserted.rows[0].system_id;
 };
 
 export const sbomController = {
@@ -18,10 +40,7 @@ export const sbomController = {
       await client.query('BEGIN');
       // Support payload: { sbom: <object>, system_id: <int> } or raw SBOM object
       const payload = (req.body && req.body.sbom) ? req.body : { sbom: req.body };
-      if (payload.system_id && typeof payload.system_id === 'string') {
-        const parsedSystemId = Number(payload.system_id);
-        payload.system_id = Number.isInteger(parsedSystemId) && parsedSystemId > 0 ? parsedSystemId : null;
-      }
+      normalizeSystemId(payload);
       const incomingSbomId = getIncomingSbomId(payload);
       const existingSbom = incomingSbomId
         ? await client.query('SELECT sbom_id, system_id FROM sbom_metadata WHERE sbom_id = $1', [incomingSbomId])
@@ -31,16 +50,7 @@ export const sbomController = {
         ? String(req.body.systemName || (req.body.sbom && req.body.sbom.systemName)).trim()
         : null;
       if (!payload.system_id && providedSystemName) {
-        const existing = await client.query('SELECT * FROM system WHERE LOWER(name) = LOWER($1) LIMIT 1', [providedSystemName]);
-        if (existing.rows.length > 0) {
-          payload.system_id = existing.rows[0].system_id;
-        } else {
-          const ins = await client.query(
-            'INSERT INTO system (name, last_uploaded_at) VALUES ($1, NULL) RETURNING *',
-            [providedSystemName]
-          );
-          payload.system_id = ins.rows[0].system_id;
-        }
+        payload.system_id = await findOrCreateSystem(client, providedSystemName);
       }
       const sbomId = await parseAndSaveSBOM(client, payload);
       const systemSbomCount = payload.system_id
@@ -56,6 +66,50 @@ export const sbomController = {
       });
     } catch (error) {
       await client.query('ROLLBACK');
+      next(error);
+    } finally {
+      client.release();
+    }
+  },
+
+  generateFromGitHub: async (req: Request, res: Response, next: NextFunction) => {
+    const client = await pool.connect();
+    try {
+      const { repoUrl, systemName } = req.body || {};
+      const generated = await generateSbomFromGitHubRepo(repoUrl);
+
+      await client.query('BEGIN');
+      const payload: any = {
+        sbom: generated.sbom,
+        system_id: null,
+      };
+
+      const providedSystemName = typeof systemName === 'string' && systemName.trim()
+        ? systemName.trim()
+        : generated.repoName;
+      payload.system_id = await findOrCreateSystem(client, providedSystemName);
+
+      const incomingSbomId = getIncomingSbomId(payload);
+      const existingSbom = incomingSbomId
+        ? await client.query('SELECT sbom_id, system_id FROM sbom_metadata WHERE sbom_id = $1', [incomingSbomId])
+        : null;
+      const sbomId = await parseAndSaveSBOM(client, payload);
+      const systemSbomCount = await client.query(
+        'SELECT COUNT(DISTINCT sbom_id)::int AS count FROM sbom_metadata WHERE system_id = $1',
+        [payload.system_id]
+      );
+      await client.query('COMMIT');
+
+      res.status(201).json({
+        success: true,
+        sbomId,
+        systemId: payload.system_id,
+        repoUrl: generated.normalizedRepoUrl,
+        createdNewSbom: existingSbom ? existingSbom.rows.length === 0 : true,
+        systemSbomCount: systemSbomCount.rows[0]?.count ?? null,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
       next(error);
     } finally {
       client.release();

@@ -145,7 +145,7 @@ The graph API builds a directed graph from `sbom_dependencies`, adds a project r
 
 New endpoint:
 
-- `GET /api/sbom/snapshots/:snapshotId/graph?depth=5&onlyVulnerable=false&search=react`
+- `GET /api/sbom/snapshots/:snapshotId/graph?depth=1&onlyVulnerable=false&search=react`
 
 The frontend component `SbomDependencyGraph.tsx` renders an SVG graph canvas with search, max depth, vulnerable-only filter, legend, and a node detail side panel.
 

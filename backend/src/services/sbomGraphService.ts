@@ -7,7 +7,7 @@ type GraphOptions = {
   search?: string;
 };
 
-const horizontalSpacing = 380;
+const horizontalSpacing = 460;
 const verticalSpacing = 112;
 const minNodeGap = 112;
 

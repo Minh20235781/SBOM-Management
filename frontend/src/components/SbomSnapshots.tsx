@@ -26,7 +26,7 @@ const SbomSnapshots: React.FC<Props> = ({ systems }) => {
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [depth, setDepth] = useState(5);
+  const [depth, setDepth] = useState(1);
   const [onlyVulnerable, setOnlyVulnerable] = useState(false);
   const [artifactMessage, setArtifactMessage] = useState<string | null>(null);
   const selectedSnapshot = snapshots.find(snapshot => snapshot.snapshot_id === selectedSnapshotId);

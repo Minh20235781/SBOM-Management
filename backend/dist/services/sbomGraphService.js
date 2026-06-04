@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sbomGraphService = void 0;
 const sbomAlgorithms_1 = require("./sbomAlgorithms");
-const horizontalSpacing = 380;
+const horizontalSpacing = 460;
 const verticalSpacing = 112;
 const minNodeGap = 112;
 exports.sbomGraphService = {

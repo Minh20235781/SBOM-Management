@@ -4,6 +4,7 @@ import { sbomController } from '../controllers/sbomController';
 const router = express.Router();
 
 router.post('/upload', sbomController.upload);
+router.post('/generate', sbomController.generateFromGitHub);
 router.get('/', sbomController.list);
 router.get('/:id', sbomController.getById);
 router.get('/:id/components', sbomController.getComponents);

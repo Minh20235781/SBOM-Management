@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Box, Info, ListTree, ShieldAlert } from 'lucide-react';
 import ComponentTable from './ComponentTable';
-import DependencyTree from './DependencyTree';
+import SbomParsedDependencyGraph from './SbomParsedDependencyGraph';
 import { type BackendVulnerability, type Dependency, type SBOMComponent, type SBOMMetadata } from '../types/sbom';
 
 const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
@@ -150,8 +150,14 @@ const SystemSbomDetail: React.FC<Props> = ({ system, onBack }) => {
               </h3>
             </div>
             <div className="p-6 bg-slate-50/50">
-              <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[420px]">
-                <DependencyTree dependencies={dependencies} components={components} />
+              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                <SbomParsedDependencyGraph
+                  projectName={system.name}
+                  sbomId={metadata?.sbom_id}
+                  components={components}
+                  dependencies={dependencies}
+                  vulnerabilities={vulnerabilities}
+                />
               </div>
             </div>
           </div>

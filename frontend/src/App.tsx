@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Systems from './components/Systems';
 import SBOMUpload from './components/SBOMUpload';
 import ComponentTable from './components/ComponentTable';
-import DependencyTree from './components/DependencyTree';
+import SbomParsedDependencyGraph from './components/SbomParsedDependencyGraph';
 import Dashboard from './components/Dashboard';
 import SbomSnapshots from './components/SbomSnapshots';
 import SystemSbomDetail from './components/SystemSbomDetail';
@@ -31,8 +31,64 @@ function App() {
     return normalized && normalized.toUpperCase() !== 'N/A' ? normalized : '-';
   };
 
+  const loadGeneratedSbomData = async (sbomId: string) => {
+    const metaRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}`);
+    const metaData = await metaRes.json();
+    setMetadata(metaData);
+
+    const compRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/components`);
+    const compData = await compRes.json();
+    setComponents(compData);
+
+    const depRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/dependencies`);
+    const depData = await depRes.json();
+    setDependencies(depData);
+
+    const vulnRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/vulnerabilities`);
+    const vulnData = await vulnRes.json();
+
+    const mappedVulns = vulnData.map((v: any) => ({
+      vuln_id: v.vuln_id,
+      sbom_id: v.sbom_id,
+      name: v.name,
+      installed: v.installed,
+      fixed_in: v.fixed_in,
+      package_type: v.package_type,
+      vulnerability: v.vulnerability || v.cve_id,
+      severity: v.severity,
+      epss: typeof v.epss === 'number' ? v.epss : (v.epss ? Number(v.epss) : null),
+      risk: v.risk,
+      cve_id: v.cve_id,
+      description: v.description,
+      affected_component_ref: v.affected_component_ref,
+    }));
+
+    const severityOrder: Record<string, number> = {
+      'critical': 4,
+      'high': 3,
+      'medium': 2,
+      'low': 1,
+      'info': 0,
+      'unknown': -1
+    };
+
+    mappedVulns.sort((a: any, b: any) => {
+      const sA = (a.severity || 'unknown').toLowerCase();
+      const sB = (b.severity || 'unknown').toLowerCase();
+      return (severityOrder[sB] || -1) - (severityOrder[sA] || -1);
+    });
+
+    setVulnerabilities(mappedVulns);
+    try { await fetchSystems(); } catch { /* ignore */ }
+  };
+
   const handleUploadSuccess = async (rawData: unknown) => {
     try {
+      if (rawData && typeof rawData === 'object' && (rawData as any).success && (rawData as any).sbomId && !(rawData as any).sbom) {
+        await loadGeneratedSbomData(String((rawData as any).sbomId));
+        return;
+      }
+
       let uploadBody: any = rawData;
       // If caller provided { sbom, systemName }
       if (rawData && typeof rawData === 'object' && (rawData as any).sbom) {
@@ -397,8 +453,14 @@ function App() {
                     </h3>
                 </div>
                 <div className="p-6 bg-slate-50/50">
-                  <div className="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[400px]">
-                    <DependencyTree dependencies={dependencies} components={components} />
+                  <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                    <SbomParsedDependencyGraph
+                      projectName={metadata?.sbom_id || 'Uploaded SBOM'}
+                      sbomId={metadata?.sbom_id}
+                      components={components}
+                      dependencies={dependencies}
+                      vulnerabilities={vulnerabilities}
+                    />
                   </div>
                 </div>
             </div>

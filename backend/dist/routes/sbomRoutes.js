@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const sbomController_1 = require("../controllers/sbomController");
 const router = express_1.default.Router();
 router.post('/upload', sbomController_1.sbomController.upload);
+router.post('/generate', sbomController_1.sbomController.generateFromGitHub);
 router.get('/', sbomController_1.sbomController.list);
 router.get('/:id', sbomController_1.sbomController.getById);
 router.get('/:id/components', sbomController_1.sbomController.getComponents);

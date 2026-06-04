@@ -14,6 +14,9 @@ type SystemRecord = {
   name: string;
   description?: string | null;
   created_timestamp?: string | null;
+  last_uploaded_at?: string | null;
+  latest_sbom_timestamp?: string | null;
+  sbom_count?: number;
 };
 
 const Dashboard: React.FC = () => {
@@ -40,6 +43,21 @@ const Dashboard: React.FC = () => {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
+  };
+
+  const formatAxisDate = (value: string) => value;
+
+  const formatAxisValue = (value: number) => Number(value).toLocaleString('vi-VN');
+
+  const renderSparklineTooltip = (label: string) => ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const point = payload[0]?.payload;
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+        <p className="text-xs font-semibold text-slate-500">{label}</p>
+        <p className="text-sm font-bold text-slate-800">{Number(point?.value || 0).toLocaleString('vi-VN')}</p>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -161,6 +179,7 @@ const Dashboard: React.FC = () => {
           <div className="absolute bottom-0 left-0 right-0 h-16 opacity-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData1}>
+                  <Tooltip content={renderSparklineTooltip('Lỗ hổng của toàn bộ danh mục')} cursor={false} />
                 <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -175,6 +194,7 @@ const Dashboard: React.FC = () => {
           <div className="absolute bottom-0 left-0 right-0 h-16 opacity-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData2}>
+                  <Tooltip content={renderSparklineTooltip('Dự án có rủi ro')} cursor={false} />
                 <Line type="monotone" dataKey="value" stroke="#a855f7" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -189,6 +209,7 @@ const Dashboard: React.FC = () => {
           <div className="absolute bottom-0 left-0 right-0 h-16 opacity-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData3}>
+                  <Tooltip content={renderSparklineTooltip('Thành phần dễ bị tấn công')} cursor={false} />
                 <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -203,6 +224,7 @@ const Dashboard: React.FC = () => {
           <div className="absolute bottom-0 left-0 right-0 h-16 opacity-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData4}>
+                  <Tooltip content={renderSparklineTooltip('Điểm rủi ro kế thừa')} cursor={false} />
                 <Line type="monotone" dataKey="value" stroke="#f43f5e" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -217,6 +239,7 @@ const Dashboard: React.FC = () => {
           <div className="absolute bottom-0 left-0 right-0 h-16 opacity-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={sparklineData2}>
+                  <Tooltip content={renderSparklineTooltip('Hệ thống')} cursor={false} />
                 <Line type="monotone" dataKey="value" stroke="#0f766e" strokeWidth={3} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -230,8 +253,8 @@ const Dashboard: React.FC = () => {
         <p className="text-xs text-slate-500 mb-6">Lần đo gần nhất: 27/12/2020 lúc 22:25:38</p>
         
         <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 8 }}>
               <defs>
                 <linearGradient id="colorVulnerabilities" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -243,9 +266,29 @@ const Dashboard: React.FC = () => {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{fontSize: 12, fill: '#64748b'}} tickMargin={10} axisLine={false} tickLine={false} />
-              <YAxis tick={{fontSize: 12, fill: '#64748b'}} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+              <XAxis
+                dataKey="name"
+                tick={{fontSize: 12, fill: '#64748b'}}
+                tickMargin={12}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={{ stroke: '#cbd5e1' }}
+                interval={0}
+                tickFormatter={formatAxisDate}
+              />
+              <YAxis
+                tick={{fontSize: 12, fill: '#64748b'}}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={{ stroke: '#cbd5e1' }}
+                tickFormatter={formatAxisValue}
+                width={56}
+                allowDecimals={false}
+              />
+              <Tooltip
+                cursor={{stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3'}}
+                contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                labelStyle={{ color: '#334155', fontWeight: 600 }}
+                formatter={(value: any) => [Number(value).toLocaleString('vi-VN'), 'Lỗ hổng / SBOM']}
+              />
               <Area type="monotone" dataKey="vulnerabilities" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorVulnerabilities)" />
               <Area type="monotone" dataKey="sboms" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorSboms)" />
             </AreaChart>
@@ -281,24 +324,47 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Recent Systems */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-2">Hệ thống gần đây</h3>
-          <p className="text-xs text-slate-500 mb-4">Các hệ thống vừa được tạo từ SBOM upload</p>
-          <div className="space-y-3 max-h-56 overflow-auto pr-1">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[23rem] flex flex-col">
+          <div className="flex items-end justify-between gap-3 mb-2">
+            <div>
+              <h3 className="font-bold text-slate-800">Hệ thống gần đây</h3>
+              <p className="text-xs text-slate-500 mt-1">Các hệ thống vừa được tạo hoặc cập nhật từ SBOM upload</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {recentSystems.length} mục
+            </span>
+          </div>
+          <div className="space-y-3 flex-1 min-h-0 overflow-auto pr-1">
             {recentSystems.length === 0 ? (
               <div className="text-sm text-slate-400 py-10 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/60">
                 Chưa có hệ thống nào.
               </div>
             ) : (
               recentSystems.map(system => (
-                <div key={system.system_id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{system.name}</p>
-                    <p className="text-xs text-slate-500">ID: {system.system_id} · {formatDateTimeVN(system.created_timestamp)}</p>
+                <div key={system.system_id} className="rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-3 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
+                        <p className="font-semibold text-slate-800 truncate">{system.name}</p>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Tạo lúc {formatDateTimeVN(system.created_timestamp)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      {Number((system as any).sbom_count || 0)} SBOM
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-500 max-w-[40%] truncate text-right">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium">ID: {system.system_id}</span>
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+                      Cập nhật gần nhất: {formatDateTimeVN((system as any).latest_sbom_timestamp || system.last_uploaded_at)}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-600 min-h-[2.5rem] overflow-hidden">
                     {system.description || 'Không có mô tả'}
-                  </div>
+                  </p>
                 </div>
               ))
             )}
@@ -306,13 +372,34 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Auditing Progress */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[23rem] flex flex-col">
           <h3 className="font-bold text-slate-800 mb-6">Tiến độ kiểm tra</h3>
-          <div className="h-40 w-full relative">
+          <div className="flex-1 min-h-[16rem] w-full relative -ml-2 pr-1">
              <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={chartData} margin={{ top: 4, right: 18, left: -14, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <YAxis tick={{fontSize: 10, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={{fontSize: 10, fill: '#64748b'}}
+                  tickMargin={10}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                  tickLine={{ stroke: '#cbd5e1' }}
+                  interval={0}
+                />
+                <YAxis
+                  tick={{fontSize: 10, fill: '#64748b'}}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                  tickLine={{ stroke: '#cbd5e1' }}
+                  tickFormatter={formatAxisValue}
+                  width={56}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  cursor={{stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3'}}
+                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                  labelStyle={{ color: '#334155', fontWeight: 600 }}
+                  formatter={(value: any) => [Number(value).toLocaleString('vi-VN'), 'Lỗ hổng']}
+                />
                <Line type="monotone" dataKey="vulnerabilities" stroke="#64748b" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
