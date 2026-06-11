@@ -33,6 +33,7 @@ const canvasPadding = 80;
 const zoomMin = 0.55;
 const zoomMax = 1.8;
 const zoomStep = 0.15;
+const connectionYPadding = 16;
 
 const wrapLabel = (label: string, maxLineLength = 25, maxLines = 2) => {
   const tokens = label.split(/(?=[/@:_-])|\s+/).filter(Boolean);
@@ -62,6 +63,14 @@ const wrapLabel = (label: string, maxLineLength = 25, maxLines = 2) => {
 };
 
 const listLabel = (node: SbomGraphNode | undefined, fallback: string) => node?.label || fallback;
+
+const getConnectionY = (nodeY: number, offsetY: number, fan: number) => {
+  const relativeY = Math.min(
+    nodeHeight - connectionYPadding,
+    Math.max(connectionYPadding, nodeHeight / 2 + fan)
+  );
+  return nodeY + offsetY + relativeY;
+};
 
 const SbomDependencyGraph: React.FC<Props> = ({
   graph,
@@ -236,9 +245,9 @@ const SbomDependencyGraph: React.FC<Props> = ({
                     const sourceFan = (sourceIndex - (sourceEdges.length - 1) / 2) * 10;
                     const targetFan = (targetIndex - (targetEdges.length - 1) / 2) * 10;
                     const x1 = source.x + bounds.offsetX + nodeWidth;
-                    const y1 = source.y + bounds.offsetY + nodeHeight / 2 + sourceFan;
-                    const x2 = target.x + bounds.offsetX - 14;
-                    const y2 = target.y + bounds.offsetY + nodeHeight / 2 + targetFan;
+                    const y1 = getConnectionY(source.y, bounds.offsetY, sourceFan);
+                    const x2 = target.x + bounds.offsetX;
+                    const y2 = getConnectionY(target.y, bounds.offsetY, targetFan);
                     const gap = Math.max(110, x2 - x1);
                     const bendX = x1 + gap * 0.52;
                     const emphasized = selectedNodeId ? edgeMeta.relatedEdgeIds.has(edge.id) : false;

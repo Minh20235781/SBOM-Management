@@ -11,6 +11,8 @@ const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const uuid_1 = require("uuid");
 const execFilePromise = util_1.default.promisify(child_process_1.execFile);
+const MAX_BUFFER = 50 * 1024 * 1024;
+const TIMEOUT_MS = Number(process.env.GRYPE_TIMEOUT_MS || 120000);
 const extractNumericEpss = (epssValue) => {
     if (typeof epssValue === 'number' && Number.isFinite(epssValue)) {
         return epssValue;
@@ -42,7 +44,7 @@ const scanSBOMWithGrype = async (sbomData) => {
         // 2. Chạy child_process gọi Grype CLI (quét file sbom và trả kết quả dạng JSON)
         // Ưu tiên đọc biến môi trường GRYPE_BIN để tránh lỗi PATH
         const grypeBin = process.env.GRYPE_BIN || 'grype';
-        const { stdout } = await execFilePromise(grypeBin, [`sbom:${tempFilePath}`, '-o', 'json', '-q']);
+        const { stdout } = await execFilePromise(grypeBin, [`sbom:${tempFilePath}`, '-o', 'json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
         // 3. Phân tích kết quả JSON
         const result = JSON.parse(stdout);
         if (!result || !result.matches) {
@@ -76,7 +78,8 @@ const scanSBOMWithGrype = async (sbomData) => {
         return vulnerabilities;
     }
     catch (error) {
-        console.error('Lỗi khi quét bằng Grype:', error.message);
+        const message = error?.stderr || error?.stdout || error?.message || 'Unknown Grype error';
+        console.error('Lỗi khi quét bằng Grype:', String(message).trim());
         // Trả về mảng rỗng thay vì ném lỗi để không làm sập tiến trình upload SBOM chung
         return [];
     }

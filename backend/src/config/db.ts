@@ -3,13 +3,21 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'sbom_db',
-  password: process.env.DB_PASSWORD || 'secret',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-});
+const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
+
+export const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl,
+    })
+  : new Pool({
+      user: process.env.DB_USER || 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'sbom_db',
+      password: process.env.DB_PASSWORD || 'secret',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      ssl,
+    });
 
 export const checkDbConnection = async () => {
   try {
@@ -183,6 +191,103 @@ export const ensureSbomAlgorithmSchema = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE
       );
+    `);
+  } finally {
+    client.release();
+  }
+};
+
+export const ensureCicdSchema = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS dev_tasks (
+        task_id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(30) DEFAULT 'TODO',
+        priority VARCHAR(30) DEFAULT 'MEDIUM',
+        assigned_to VARCHAR(255),
+        related_pipeline_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cicd_pipelines (
+        pipeline_id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        provider VARCHAR(50) DEFAULT 'INTERNAL',
+        branch VARCHAR(100) DEFAULT 'main',
+        trigger_type VARCHAR(50) DEFAULT 'MANUAL',
+        repo_url VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE
+      );
+    `);
+
+    await client.query(`
+      ALTER TABLE cicd_pipelines
+        ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cicd_pipeline_runs (
+        run_id SERIAL PRIMARY KEY,
+        pipeline_id INTEGER NOT NULL,
+        project_id INTEGER NOT NULL,
+        run_number INTEGER NOT NULL,
+        status VARCHAR(30) DEFAULT 'PENDING',
+        commit_hash VARCHAR(100),
+        branch VARCHAR(100),
+        started_at TIMESTAMP,
+        finished_at TIMESTAMP,
+        duration_ms INTEGER,
+        triggered_by VARCHAR(255),
+        generated_sbom_snapshot_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (pipeline_id) REFERENCES cicd_pipelines(pipeline_id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES system(system_id) ON DELETE CASCADE,
+        FOREIGN KEY (generated_sbom_snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE SET NULL,
+        UNIQUE (pipeline_id, run_number)
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cicd_pipeline_steps (
+        step_id SERIAL PRIMARY KEY,
+        pipeline_run_id INTEGER NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        step_order INTEGER NOT NULL,
+        status VARCHAR(30) DEFAULT 'PENDING',
+        started_at TIMESTAMP,
+        finished_at TIMESTAMP,
+        logs TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (pipeline_run_id) REFERENCES cicd_pipeline_runs(run_id) ON DELETE CASCADE
+      );
+    `);
+
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM information_schema.table_constraints
+          WHERE constraint_name = 'fk_dev_tasks_related_pipeline'
+            AND table_name = 'dev_tasks'
+        ) THEN
+          ALTER TABLE dev_tasks
+            ADD CONSTRAINT fk_dev_tasks_related_pipeline
+            FOREIGN KEY (related_pipeline_id) REFERENCES cicd_pipelines(pipeline_id) ON DELETE SET NULL;
+        END IF;
+      END
+      $$;
     `);
   } finally {
     client.release();

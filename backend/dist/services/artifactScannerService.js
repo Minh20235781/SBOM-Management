@@ -39,7 +39,7 @@ const dependencyToComponent = (dep) => {
         licenses: null,
         hashes: null,
     };
-    component.stableKey = (0, sbomAlgorithms_1.stableComponentKey)(component);
+    component.stableKey = `${dep.ecosystem}:${dep.name}`.toLowerCase();
     return component;
 };
 const parsePackageJson = (content, sourcePath) => {

@@ -7,6 +7,7 @@ import SbomParsedDependencyGraph from './components/SbomParsedDependencyGraph';
 import Dashboard from './components/Dashboard';
 import SbomSnapshots from './components/SbomSnapshots';
 import SystemSbomDetail from './components/SystemSbomDetail';
+import DeveloperCicd from './components/DeveloperCicd';
 import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
@@ -358,7 +359,7 @@ function App() {
         {/* Content Scrollable area */}
         <div className="flex-1 overflow-auto bg-[#fafafa] p-8">
           
-          <div className={`${activeMenu === 'history' ? 'max-w-none' : 'max-w-7xl'} mx-auto space-y-6`}>
+          <div className={`${activeMenu === 'history' || activeMenu === 'pipeline' ? 'max-w-none' : 'max-w-7xl'} mx-auto space-y-6`}>
 
             {activeMenu === 'dashboard' && <Dashboard />}
 
@@ -564,7 +565,11 @@ function App() {
               <SbomSnapshots systems={systems} />
             )}
 
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && (
+            {activeMenu === 'pipeline' && (
+              <DeveloperCicd systems={systems} refreshSystems={fetchSystems} />
+            )}
+
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'pipeline' && (
               <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
                 <Activity className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>

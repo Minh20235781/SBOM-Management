@@ -193,6 +193,7 @@ export const sbomGraphService = {
         positionNode(node.id, node.depth || 1, new Set());
       }
     }
+    projectNode.y = 0;
 
     const nodesByDepth = new Map<number, typeof allNodes>();
     for (const node of allNodes) {

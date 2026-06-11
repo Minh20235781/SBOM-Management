@@ -196,3 +196,63 @@ export interface SbomGraphResponse {
     highCount: number;
   };
 }
+
+export interface DevTask {
+  task_id: number;
+  project_id: number;
+  title: string;
+  description?: string | null;
+  status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  assigned_to?: string | null;
+  related_pipeline_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CicdPipeline {
+  pipeline_id: number;
+  project_id: number;
+  name: string;
+  provider: 'INTERNAL' | 'JENKINS' | 'GITHUB_ACTIONS' | 'GITLAB_CI' | 'CIRCLECI';
+  branch: string;
+  trigger_type: 'MANUAL' | 'PUSH' | 'PULL_REQUEST' | 'SCHEDULE';
+  repo_url?: string | null;
+  latest_run_id?: number | null;
+  latest_status?: string | null;
+  latest_snapshot_id?: string | null;
+  latest_run_number?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CicdPipelineRun {
+  run_id: number;
+  pipeline_id: number;
+  project_id: number;
+  run_number: number;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+  commit_hash?: string | null;
+  branch?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+  triggered_by?: string | null;
+  generated_sbom_snapshot_id?: string | null;
+  generated_snapshot_version?: number | null;
+  snapshot_summary?: SbomSnapshot['summary'] | null;
+  pipeline_name?: string;
+  repo_url?: string | null;
+  steps?: CicdPipelineStep[];
+}
+
+export interface CicdPipelineStep {
+  step_id: number;
+  pipeline_run_id: number;
+  name: string;
+  step_order: number;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  started_at?: string | null;
+  finished_at?: string | null;
+  logs?: string | null;
+}

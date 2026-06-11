@@ -5,7 +5,8 @@ import sbomRoutes from './routes/sbomRoutes';
 import systemRoutes from './routes/systemRoutes';
 import projectSbomRoutes from './routes/projectSbomRoutes';
 import sbomSnapshotRoutes from './routes/sbomSnapshotRoutes';
-import { checkDbConnection, ensureSbomAlgorithmSchema, ensureVulnerabilitySchema } from './config/db';
+import cicdRoutes from './routes/cicdRoutes';
+import { checkDbConnection, ensureCicdSchema, ensureSbomAlgorithmSchema, ensureVulnerabilitySchema } from './config/db';
 import { errorHandler } from './middlewares/errorMiddleware';
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.use('/api/sboms', sbomRoutes);
 app.use('/api/systems', systemRoutes);
 app.use('/api/projects', projectSbomRoutes);
 app.use('/api/sbom', sbomSnapshotRoutes);
+app.use('/api', cicdRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('SBOM Management Backend API is running...');
@@ -32,6 +34,7 @@ const startServer = async () => {
   await checkDbConnection();
   await ensureVulnerabilitySchema();
   await ensureSbomAlgorithmSchema();
+  await ensureCicdSchema();
   app.listen(port, () => {
     console.log(`[server]: Server is running at http://localhost:${port}`);
   });

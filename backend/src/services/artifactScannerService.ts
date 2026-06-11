@@ -55,7 +55,7 @@ const dependencyToComponent = (dep: ExtractedDependency): NormalizedComponent =>
     licenses: null,
     hashes: null,
   };
-  component.stableKey = stableComponentKey(component);
+  component.stableKey = `${dep.ecosystem}:${dep.name}`.toLowerCase();
   return component;
 };
 
