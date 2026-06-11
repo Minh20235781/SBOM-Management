@@ -241,6 +241,7 @@ export interface CicdPipelineRun {
   generated_sbom_snapshot_id?: string | null;
   generated_snapshot_version?: number | null;
   snapshot_summary?: SbomSnapshot['summary'] | null;
+  validation_report?: SbomValidationReport | null;
   pipeline_name?: string;
   repo_url?: string | null;
   steps?: CicdPipelineStep[];
@@ -255,4 +256,24 @@ export interface CicdPipelineStep {
   started_at?: string | null;
   finished_at?: string | null;
   logs?: string | null;
+}
+
+export interface SbomValidationReport {
+  status: 'PASS' | 'WARN' | 'FAIL';
+  score: number;
+  matchedCount: number;
+  sourceComponentCount: number;
+  sbomComponentCount: number;
+  missingFromSbom: string[];
+  extraInSbom: string[];
+  versionMismatches: Array<{
+    component: string;
+    sourceVersion?: string | null;
+    sbomVersion?: string | null;
+  }>;
+  evidence: {
+    artifactCount: number;
+    artifactPaths: string[];
+    method: string;
+  };
 }

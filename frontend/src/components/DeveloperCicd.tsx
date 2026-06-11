@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, GitBranch, GitMerge, ListChecks, Play, RefreshCw, Server, XCircle } from 'lucide-react';
+import { CheckCircle2, GitBranch, GitMerge, ListChecks, Play, RefreshCw, Server, ShieldCheck, XCircle } from 'lucide-react';
 import SbomDependencyGraph from './SbomDependencyGraph';
 import {
   type CicdPipeline,
@@ -35,6 +35,9 @@ const statusClass: Record<string, string> = {
   MEDIUM: 'border-blue-100 bg-blue-50 text-blue-700',
   LOW: 'border-emerald-100 bg-emerald-50 text-emerald-700',
   HIGH: 'border-amber-100 bg-amber-50 text-amber-700',
+  PASS: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+  WARN: 'border-amber-100 bg-amber-50 text-amber-700',
+  FAIL: 'border-rose-100 bg-rose-50 text-rose-700',
 };
 
 const Badge = ({ value }: { value?: string | null }) => (
@@ -231,6 +234,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
   };
 
   const summary = selectedRun?.snapshot_summary;
+  const validation = selectedRun?.validation_report;
 
   return (
     <div className="space-y-6">
@@ -239,7 +243,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Developer CI/CD</p>
           <h2 className="mt-1 text-2xl font-bold text-slate-900">Pipeline tạo SBOM tự động</h2>
           <p className="mt-2 max-w-3xl text-sm text-slate-500">
-            Chọn project, tạo task, tạo pipeline, nhập GitHub repo URL, chạy pipeline và xem snapshot/change log/graph được sinh ra.
+            Input: project, repo URL và dependency files. Verification: so khớp SBOM snapshot với dependency được trích xuất từ mã nguồn. Output: snapshot, compatibility score, change log và dependency graph.
           </p>
         </div>
         <button
@@ -472,6 +476,59 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
               <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">Unchanged: {summary?.unchanged ?? 0}</span>
             </div>
           </div>
+          {validation && (
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-white p-2 text-emerald-600 ring-1 ring-slate-200">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Kiểm chứng SBOM với mã nguồn</h4>
+                    <p className="mt-1 text-xs text-slate-500">
+                      So sánh component trong snapshot với dependency files đang lưu của project.
+                    </p>
+                  </div>
+                </div>
+                <Badge value={validation.status} />
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-400">Compatibility</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">{validation.score}%</p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-400">Matched</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-600">{validation.matchedCount}/{validation.sourceComponentCount}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-400">Missing</p>
+                  <p className="mt-1 text-2xl font-bold text-rose-600">{validation.missingFromSbom.length}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-400">Extra</p>
+                  <p className="mt-1 text-2xl font-bold text-amber-600">{validation.extraInSbom.length}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 lg:grid-cols-3">
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="mb-2 font-bold text-slate-700">Evidence</p>
+                  <p>Files: {validation.evidence.artifactPaths.join(', ') || '-'}</p>
+                  <p className="mt-1">Source components: {validation.sourceComponentCount} · SBOM components: {validation.sbomComponentCount}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="mb-2 font-bold text-slate-700">Missing from SBOM</p>
+                  <p className="break-words">{validation.missingFromSbom.slice(0, 6).join(', ') || 'None'}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-white p-3">
+                  <p className="mb-2 font-bold text-slate-700">Extra / mismatch</p>
+                  <p className="break-words">
+                    {[...validation.extraInSbom.slice(0, 4), ...validation.versionMismatches.slice(0, 2).map(item => `${item.component}: ${item.sourceVersion || '-'} -> ${item.sbomVersion || '-'}`)].join(', ') || 'None'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="mb-4 overflow-hidden rounded-lg border border-slate-100">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">

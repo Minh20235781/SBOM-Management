@@ -1,11 +1,13 @@
 import { PoolClient } from 'pg';
 import { incrementalSbomService } from './incrementalSbomService';
 import { artifactScannerService, ProjectArtifactFile } from './artifactScannerService';
+import { sbomValidationService } from './sbomValidationService';
 
 const runSteps = [
   'Checkout source code',
   'Read dependency files',
   'Generate / Update SBOM',
+  'Validate SBOM against source',
   'Compare SBOM snapshot',
   'Store SBOM snapshot',
   'Update dependency graph',
@@ -257,6 +259,15 @@ export const cicdService = {
           await client.query(
             'UPDATE cicd_pipeline_runs SET generated_sbom_snapshot_id = $1 WHERE run_id = $2',
             [generatedSnapshotId, run.run_id]
+          );
+        }
+
+        if (name === 'Validate SBOM against source' && generatedSnapshotId) {
+          const validation = await sbomValidationService.validateSnapshotAgainstSource(client, pipeline.project_id, generatedSnapshotId);
+          logs = `Compatibility ${validation.status}: ${validation.score}% (${validation.matchedCount}/${validation.sourceComponentCount} source components matched). Missing: ${validation.missingFromSbom.length}, Extra: ${validation.extraInSbom.length}, Version mismatch: ${validation.versionMismatches.length}.`;
+          await client.query(
+            'UPDATE cicd_pipeline_runs SET validation_report = $1 WHERE run_id = $2',
+            [JSON.stringify(validation), run.run_id]
           );
         }
 

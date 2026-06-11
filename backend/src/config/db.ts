@@ -259,6 +259,11 @@ export const ensureCicdSchema = async () => {
     `);
 
     await client.query(`
+      ALTER TABLE cicd_pipeline_runs
+        ADD COLUMN IF NOT EXISTS validation_report JSONB;
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS cicd_pipeline_steps (
         step_id SERIAL PRIMARY KEY,
         pipeline_run_id INTEGER NOT NULL,
