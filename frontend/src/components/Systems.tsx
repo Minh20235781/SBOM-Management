@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { API_BASE_URL } from '../api';
 
 type System = {
   system_id: number;
@@ -41,7 +42,7 @@ type Props = {
 };
 
 const Systems: React.FC<Props> = ({ systems, refresh, onDelete, onViewDetail }) => {
-  const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
+  const API_BASE = API_BASE_URL;
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);

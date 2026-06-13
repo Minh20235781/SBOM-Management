@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../api';
 
 const sparklineData1 = [ { value: 20 }, { value: 25 }, { value: 22 }, { value: 30 }, { value: 28 }, { value: 45 }, { value: 75 }, { value: 70 } ];
 const sparklineData2 = [ { value: 5 }, { value: 5 }, { value: 10 }, { value: 15 }, { value: 12 }, { value: 20 }, { value: 25 }, { value: 29 } ];

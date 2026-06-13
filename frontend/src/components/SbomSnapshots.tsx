@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { GitBranchPlus, RefreshCw } from 'lucide-react';
 import SbomDependencyGraph from './SbomDependencyGraph';
 import { type SbomChangeLog, type SbomGraphResponse, type SbomSnapshot } from '../types/sbom';
+import { API_BASE_URL } from '../api';
 
-const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
+const API_BASE = API_BASE_URL;
 
 type Props = {
   systems: Array<{ system_id: number; name: string }>;

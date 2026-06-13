@@ -30,6 +30,39 @@ const findOrCreateSystem = async (client: any, name: string) => {
   return inserted.rows[0].system_id;
 };
 
+const ensureRepositoryPipeline = async (client: any, systemId: number, repoUrl: string) => {
+  const normalizedRepoUrl = String(repoUrl || '').trim();
+  if (!normalizedRepoUrl) return;
+
+  const existing = await client.query(
+    `SELECT pipeline_id
+     FROM cicd_pipelines
+     WHERE project_id = $1
+       AND repo_url IS NOT NULL
+       AND btrim(repo_url) <> ''
+     ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, pipeline_id DESC
+     LIMIT 1`,
+    [systemId]
+  );
+
+  if (existing.rows[0]) {
+    await client.query(
+      `UPDATE cicd_pipelines
+       SET repo_url = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE pipeline_id = $1`,
+      [existing.rows[0].pipeline_id, normalizedRepoUrl]
+    );
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO cicd_pipelines
+      (project_id, name, provider, branch, trigger_type, repo_url)
+     VALUES ($1, $2, 'INTERNAL', 'main', 'MANUAL', $3)`,
+    [systemId, 'sbom-validation-source', normalizedRepoUrl]
+  );
+};
+
 export const sbomController = {
   upload: async (req: Request, res: Response, next: NextFunction) => {
     const client = await pool.connect();
@@ -88,6 +121,7 @@ export const sbomController = {
         ? systemName.trim()
         : generated.repoName;
       payload.system_id = await findOrCreateSystem(client, providedSystemName);
+      await ensureRepositoryPipeline(client, payload.system_id, generated.normalizedRepoUrl);
 
       const incomingSbomId = getIncomingSbomId(payload);
       const existingSbom = incomingSbomId

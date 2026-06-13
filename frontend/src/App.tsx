@@ -8,12 +8,14 @@ import Dashboard from './components/Dashboard';
 import SbomSnapshots from './components/SbomSnapshots';
 import SystemSbomDetail from './components/SystemSbomDetail';
 import DeveloperCicd from './components/DeveloperCicd';
+import SbomValidationScenarios from './components/SbomValidationScenarios';
+import { API_BASE } from './api';
 import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
   GitMerge, Server, Layers, UploadCloud, Info,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, TestTube2
 } from 'lucide-react';
 
 function App() {
@@ -33,19 +35,19 @@ function App() {
   };
 
   const loadGeneratedSbomData = async (sbomId: string) => {
-    const metaRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}`);
+    const metaRes = await fetch(`${API_BASE}/sboms/${sbomId}`);
     const metaData = await metaRes.json();
     setMetadata(metaData);
 
-    const compRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/components`);
+    const compRes = await fetch(`${API_BASE}/sboms/${sbomId}/components`);
     const compData = await compRes.json();
     setComponents(compData);
 
-    const depRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/dependencies`);
+    const depRes = await fetch(`${API_BASE}/sboms/${sbomId}/dependencies`);
     const depData = await depRes.json();
     setDependencies(depData);
 
-    const vulnRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/vulnerabilities`);
+    const vulnRes = await fetch(`${API_BASE}/sboms/${sbomId}/vulnerabilities`);
     const vulnData = await vulnRes.json();
 
     const mappedVulns = vulnData.map((v: any) => ({
@@ -97,7 +99,7 @@ function App() {
         uploadBody = { sbom: payload.sbom, systemName: payload.systemName };
         if (payload.systemName) {
           // Create or get system
-          const sysRes = await fetch('http://localhost:5000/api/systems', {
+          const sysRes = await fetch(`${API_BASE}/systems`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: payload.systemName })
@@ -111,7 +113,7 @@ function App() {
         }
       }
 
-      const response = await fetch('http://localhost:5000/api/sboms/upload', {
+      const response = await fetch(`${API_BASE}/sboms/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(uploadBody)
@@ -121,22 +123,22 @@ function App() {
       if (data.success) {
         const sbomId = data.sbomId;
         // Fetch metadata
-        const metaRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}`);
+        const metaRes = await fetch(`${API_BASE}/sboms/${sbomId}`);
         const metaData = await metaRes.json();
         setMetadata(metaData);
 
         // Fetch components
-        const compRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/components`);
+        const compRes = await fetch(`${API_BASE}/sboms/${sbomId}/components`);
         const compData = await compRes.json();
         setComponents(compData);
 
         // Fetch dependencies
-        const depRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/dependencies`);
+        const depRes = await fetch(`${API_BASE}/sboms/${sbomId}/dependencies`);
         const depData = await depRes.json();
         setDependencies(depData);
         
         // Fetch vulnerabilities
-        const vulnRes = await fetch(`http://localhost:5000/api/sboms/${sbomId}/vulnerabilities`);
+        const vulnRes = await fetch(`${API_BASE}/sboms/${sbomId}/vulnerabilities`);
         const vulnData = await vulnRes.json();
 
         const mappedVulns = vulnData.map((v: any) => ({
@@ -186,7 +188,7 @@ function App() {
 
   const fetchSystems = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/systems');
+      const res = await fetch(`${API_BASE}/systems`);
       if (!res.ok) throw new Error('Failed to fetch systems');
       const list = await res.json();
       setSystems(list);
@@ -255,6 +257,12 @@ function App() {
                 className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'dependencies' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
               >
                 <ListTree className={`w-4 h-4 ${activeMenu === 'dependencies' ? 'text-blue-600' : 'text-slate-400'}`} /> Phụ thuộc
+              </button>
+              <button 
+                onClick={() => setActiveMenu('validation-scenarios')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'validation-scenarios' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <TestTube2 className={`w-4 h-4 ${activeMenu === 'validation-scenarios' ? 'text-blue-600' : 'text-slate-400'}`} /> Kiểm chứng
               </button>
               <button 
                 onClick={() => setActiveMenu('history')}
@@ -565,11 +573,15 @@ function App() {
               <SbomSnapshots systems={systems} />
             )}
 
+            {activeMenu === 'validation-scenarios' && (
+              <SbomValidationScenarios />
+            )}
+
             {activeMenu === 'pipeline' && (
               <DeveloperCicd systems={systems} refreshSystems={fetchSystems} />
             )}
 
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'pipeline' && (
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'validation-scenarios' && activeMenu !== 'pipeline' && (
               <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
                 <Activity className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>

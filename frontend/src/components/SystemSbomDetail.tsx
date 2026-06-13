@@ -3,8 +3,9 @@ import { ArrowLeft, Box, Info, ListTree, ShieldAlert } from 'lucide-react';
 import ComponentTable from './ComponentTable';
 import SbomParsedDependencyGraph from './SbomParsedDependencyGraph';
 import { type BackendVulnerability, type Dependency, type SBOMComponent, type SBOMMetadata } from '../types/sbom';
+import { API_BASE_URL } from '../api';
 
-const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000';
+const API_BASE = API_BASE_URL;
 
 type SystemRecord = {
   system_id: number;

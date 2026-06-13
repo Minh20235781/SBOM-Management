@@ -8,8 +8,9 @@ import {
   type SbomChangeLog,
   type SbomGraphResponse,
 } from '../types/sbom';
+import { API_BASE_URL } from '../api';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = API_BASE_URL;
 
 type SystemOption = {
   system_id: number;

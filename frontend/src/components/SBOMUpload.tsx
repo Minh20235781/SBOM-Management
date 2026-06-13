@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { FileCode, GitBranch, Loader2, Shield, Upload, Wand2 } from 'lucide-react';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../api';
 
 interface Props {
   onUploadSuccess: (data: Record<string, unknown>) => void | Promise<void>;

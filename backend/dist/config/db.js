@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ensureCicdSchema = exports.ensureSbomAlgorithmSchema = exports.ensureVulnerabilitySchema = exports.checkDbConnection = exports.pool = void 0;
+exports.ensureSbomValidationScenarioSchema = exports.ensureCicdSchema = exports.ensureSbomAlgorithmSchema = exports.ensureVulnerabilitySchema = exports.checkDbConnection = exports.pool = void 0;
 const pg_1 = require("pg");
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
@@ -293,3 +293,40 @@ const ensureCicdSchema = async () => {
     }
 };
 exports.ensureCicdSchema = ensureCicdSchema;
+const ensureSbomValidationScenarioSchema = async () => {
+    const client = await exports.pool.connect();
+    try {
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_validation_runs (
+        run_id VARCHAR(80) PRIMARY KEY,
+        scenario_id VARCHAR(80) NOT NULL,
+        project_name VARCHAR(255) NOT NULL,
+        github_url VARCHAR(500) NOT NULL,
+        application_type VARCHAR(80) NOT NULL DEFAULT 'Web Application',
+        repo_scope VARCHAR(80) NOT NULL DEFAULT 'Single Repository',
+        architecture_type VARCHAR(255),
+        status VARCHAR(40) NOT NULL DEFAULT 'CATALOG_READY',
+        source_path VARCHAR(1000),
+        sbom_id VARCHAR(255),
+        sbom_path VARCHAR(1000),
+        faulty_sbom_path VARCHAR(1000),
+        confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        analysis JSONB,
+        graph JSONB,
+        verification_report JSONB,
+        test_report JSONB,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+        await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_sbom_validation_runs_scenario_id
+      ON sbom_validation_runs (scenario_id);
+    `);
+    }
+    finally {
+        client.release();
+    }
+};
+exports.ensureSbomValidationScenarioSchema = ensureSbomValidationScenarioSchema;
