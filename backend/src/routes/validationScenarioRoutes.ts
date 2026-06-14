@@ -10,6 +10,7 @@ router.post('/runs/:runId/confirm', validationScenarioController.confirm);
 router.post('/runs/:runId/generate', validationScenarioController.generate);
 router.post('/runs/:runId/faulty', validationScenarioController.createFaulty);
 router.post('/runs/:runId/verify', validationScenarioController.verify);
+router.post('/runs/:runId/verify-uploaded', validationScenarioController.verifyUploaded);
 router.get('/runs/:runId/report', validationScenarioController.report);
 
 export default router;

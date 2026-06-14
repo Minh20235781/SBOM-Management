@@ -5,8 +5,7 @@ export const testReportService = {
     const analysis = run.analysis || {};
     const graph = run.graph || {};
     const passed = Boolean(
-      analysis.sbomId
-      && analysis.componentCount > 0
+      analysis.componentCount > 0
       && analysis.dependencyFileCount > 0
       && verificationReport
     );

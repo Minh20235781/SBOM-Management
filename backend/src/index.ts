@@ -7,7 +7,7 @@ import projectSbomRoutes from './routes/projectSbomRoutes';
 import sbomSnapshotRoutes from './routes/sbomSnapshotRoutes';
 import cicdRoutes from './routes/cicdRoutes';
 import validationScenarioRoutes from './routes/validationScenarioRoutes';
-import { checkDbConnection, ensureCicdSchema, ensureSbomAlgorithmSchema, ensureSbomValidationScenarioSchema, ensureVulnerabilitySchema } from './config/db';
+import { checkDbConnection, ensureCicdSchema, ensureCoreSchema, ensureSbomAlgorithmSchema, ensureSbomValidationScenarioSchema, ensureVulnerabilitySchema } from './config/db';
 import { errorHandler } from './middlewares/errorMiddleware';
 
 dotenv.config();
@@ -34,6 +34,7 @@ app.use(errorHandler);
 
 const startServer = async () => {
   await checkDbConnection();
+  await ensureCoreSchema();
   await ensureVulnerabilitySchema();
   await ensureSbomAlgorithmSchema();
   await ensureCicdSchema();

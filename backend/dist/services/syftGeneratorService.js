@@ -10,6 +10,7 @@ const promises_1 = __importDefault(require("fs/promises"));
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const uuid_1 = require("uuid");
+const metadataInferenceService_1 = require("./metadataInferenceService");
 const execFilePromise = util_1.default.promisify(child_process_1.execFile);
 const MAX_BUFFER = 50 * 1024 * 1024;
 const TIMEOUT_MS = Number(process.env.SYFT_TIMEOUT_MS || 120000);
@@ -51,7 +52,13 @@ const generateSbomFromGitHubRepo = async (repoUrl) => {
         const syftBin = process.env.SYFT_BIN || 'syft';
         const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
         const sbom = JSON.parse(stdout);
-        return { sbom, normalizedRepoUrl, repoName };
+        const inferredMetadata = await metadataInferenceService_1.metadataInferenceService.infer(repoPath, {
+            repoUrl: normalizedRepoUrl,
+            repoName,
+            context: 'manual',
+        });
+        const enrichedSbom = metadataInferenceService_1.metadataInferenceService.injectIntoCycloneDx(sbom, inferredMetadata);
+        return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata };
     }
     catch (error) {
         const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';

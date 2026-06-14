@@ -3,15 +3,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ensureSbomValidationScenarioSchema = exports.ensureCicdSchema = exports.ensureSbomAlgorithmSchema = exports.ensureVulnerabilitySchema = exports.checkDbConnection = exports.pool = void 0;
+exports.ensureSbomValidationScenarioSchema = exports.ensureCicdSchema = exports.ensureSbomAlgorithmSchema = exports.ensureVulnerabilitySchema = exports.ensureCoreSchema = exports.checkDbConnection = exports.pool = void 0;
 const pg_1 = require("pg");
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
+const poolOptions = { ssl, options: '-c search_path=public' };
 exports.pool = process.env.DATABASE_URL
     ? new pg_1.Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl,
+        ...poolOptions,
     })
     : new pg_1.Pool({
         user: process.env.DB_USER || 'postgres',
@@ -19,7 +20,7 @@ exports.pool = process.env.DATABASE_URL
         database: process.env.DB_NAME || 'sbom_db',
         password: process.env.DB_PASSWORD || 'secret',
         port: parseInt(process.env.DB_PORT || '5432', 10),
-        ssl,
+        ...poolOptions,
     });
 const checkDbConnection = async () => {
     try {
@@ -33,18 +34,186 @@ const checkDbConnection = async () => {
     }
 };
 exports.checkDbConnection = checkDbConnection;
+const ensureCoreSchema = async () => {
+    const client = await exports.pool.connect();
+    try {
+        await client.query('CREATE SCHEMA IF NOT EXISTS public');
+        await client.query('SET search_path TO public');
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS system (
+        system_id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        description TEXT,
+        created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_uploaded_at TIMESTAMP
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_metadata (
+        sbom_id VARCHAR(255) PRIMARY KEY,
+        authors VARCHAR,
+        created_timestamp TIMESTAMP,
+        system_id INTEGER,
+        tool_components VARCHAR,
+        tool_services VARCHAR,
+        lifecycle_phase TEXT
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS component (
+        component_id VARCHAR(255) PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        supplier_name VARCHAR(255),
+        name VARCHAR(255) NOT NULL,
+        version TEXT,
+        purl VARCHAR(500),
+        cpe VARCHAR(500),
+        hashes VARCHAR,
+        licenses VARCHAR,
+        support_level TEXT,
+        end_of_support DATE,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS dependency (
+        dependency_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        component_ref VARCHAR(255) NOT NULL,
+        depends_on_ref VARCHAR(255) NOT NULL,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE,
+        FOREIGN KEY (component_ref) REFERENCES component(component_id),
+        FOREIGN KEY (depends_on_ref) REFERENCES component(component_id)
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS vulnerability (
+        vuln_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        installed TEXT,
+        fixed_in TEXT,
+        package_type TEXT,
+        vulnerability VARCHAR(255),
+        severity VARCHAR(50),
+        epss NUMERIC(6,5),
+        risk VARCHAR(50),
+        cve_id TEXT,
+        description VARCHAR,
+        affected_component_ref VARCHAR(255),
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE,
+        FOREIGN KEY (affected_component_ref) REFERENCES component(component_id)
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS composition (
+        composition_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        aggregate_type VARCHAR(100),
+        assemblies VARCHAR,
+        dependencies VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS formulation (
+        formulation_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        components VARCHAR,
+        workflows VARCHAR,
+        tools VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS annotation (
+        annotation_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        annotator VARCHAR(255),
+        created_timestamp TIMESTAMP,
+        text TEXT NOT NULL,
+        subjects VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS declaration (
+        declaration_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        issuer VARCHAR(255),
+        claims VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS citation (
+        citation_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        title VARCHAR(255),
+        url VARCHAR(500) NOT NULL,
+        description VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS definition (
+        definition_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        components VARCHAR,
+        services VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+        await client.query(`
+      CREATE TABLE IF NOT EXISTS service (
+        service_id SERIAL PRIMARY KEY,
+        sbom_id VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        version TEXT,
+        description VARCHAR,
+        FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
+      );
+    `);
+    }
+    finally {
+        client.release();
+    }
+};
+exports.ensureCoreSchema = ensureCoreSchema;
 const ensureVulnerabilitySchema = async () => {
     const client = await exports.pool.connect();
     try {
         await client.query(`
       ALTER TABLE vulnerability
         ADD COLUMN IF NOT EXISTS name VARCHAR(255),
-        ADD COLUMN IF NOT EXISTS installed VARCHAR(100),
-        ADD COLUMN IF NOT EXISTS fixed_in VARCHAR(100),
-        ADD COLUMN IF NOT EXISTS package_type VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS installed TEXT,
+        ADD COLUMN IF NOT EXISTS fixed_in TEXT,
+        ADD COLUMN IF NOT EXISTS package_type TEXT,
         ADD COLUMN IF NOT EXISTS vulnerability VARCHAR(255),
         ADD COLUMN IF NOT EXISTS epss NUMERIC(6,5),
         ADD COLUMN IF NOT EXISTS risk VARCHAR(50)
+    `);
+        await client.query(`
+      ALTER TABLE IF EXISTS sbom_metadata
+        ALTER COLUMN lifecycle_phase TYPE TEXT;
+    `);
+        await client.query(`
+      ALTER TABLE IF EXISTS component
+        ALTER COLUMN version TYPE TEXT,
+        ALTER COLUMN purl TYPE TEXT,
+        ALTER COLUMN cpe TYPE TEXT,
+        ALTER COLUMN support_level TYPE TEXT;
+    `);
+        await client.query(`
+      ALTER TABLE IF EXISTS vulnerability
+        ALTER COLUMN installed TYPE TEXT,
+        ALTER COLUMN fixed_in TYPE TEXT,
+        ALTER COLUMN package_type TYPE TEXT,
+        ALTER COLUMN cve_id TYPE TEXT;
+    `);
+        await client.query(`
+      ALTER TABLE IF EXISTS service
+        ALTER COLUMN version TYPE TEXT;
     `);
         // Ensure systems table exists and sbom_metadata has system_id
         await client.query(`
@@ -139,9 +308,9 @@ const ensureSbomAlgorithmSchema = async () => {
         stable_key VARCHAR(500) NOT NULL,
         component_ref VARCHAR(255),
         name VARCHAR(255) NOT NULL,
-        version VARCHAR(100),
+        version TEXT,
         purl VARCHAR(500),
-        ecosystem VARCHAR(100),
+        ecosystem TEXT,
         supplier_name VARCHAR(255),
         licenses VARCHAR,
         hashes VARCHAR,
@@ -161,6 +330,11 @@ const ensureSbomAlgorithmSchema = async () => {
         has_cycle BOOLEAN DEFAULT FALSE,
         FOREIGN KEY (snapshot_id) REFERENCES sbom_snapshots(snapshot_id) ON DELETE CASCADE
       );
+    `);
+        await client.query(`
+      ALTER TABLE IF EXISTS sbom_components
+        ALTER COLUMN version TYPE TEXT,
+        ALTER COLUMN ecosystem TYPE TEXT;
     `);
         await client.query(`
       CREATE TABLE IF NOT EXISTS sbom_artifact_fingerprints (

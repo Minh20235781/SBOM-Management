@@ -20,7 +20,7 @@ type SystemOption = {
 
 type Props = {
   systems: SystemOption[];
-  refreshSystems: () => Promise<void>;
+  refreshSystems?: () => Promise<void>;
 };
 
 const statusClass: Record<string, string> = {
@@ -47,7 +47,7 @@ const Badge = ({ value }: { value?: string | null }) => (
   </span>
 );
 
-const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
+const DeveloperCicd: React.FC<Props> = ({ systems }) => {
   const preferredSystem = useMemo(
     () => systems.find(system => system.name === 'LaKhe-Management-v2') || systems[0],
     [systems]
@@ -150,32 +150,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
     loadSnapshotResult(snapshotId).catch(() => setMessage('Không tải được kết quả SBOM'));
   }, [selectedRun?.generated_sbom_snapshot_id, graphSearch, graphDepth, onlyVulnerable]);
 
-  const ensureDemoProject = async () => {
-    setLoading(true);
-    setMessage('');
-    try {
-      const existing = systems.find(system => system.name === 'LaKhe-Management-v2');
-      if (existing) {
-        setProjectId(existing.system_id);
-        return;
-      }
-      const res = await fetch(`${API_BASE}/api/systems`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'LaKhe-Management-v2',
-          description: 'Demo project for CI/CD SBOM pipeline',
-        }),
-      });
-      const data = await res.json();
-      await refreshSystems();
-      setProjectId(data.system_id);
-      setMessage('Đã tạo project demo LaKhe-Management-v2');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const createTask = async () => {
     if (!projectId) return;
     setLoading(true);
@@ -239,7 +213,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="border-b border-slate-200 pb-5">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Developer CI/CD</p>
           <h2 className="mt-1 text-2xl font-bold text-slate-900">Pipeline tạo SBOM tự động</h2>
@@ -247,15 +221,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
             Input: project, repo URL và dependency files. Verification: so khớp SBOM snapshot với dependency được trích xuất từ mã nguồn. Output: snapshot, compatibility score, change log và dependency graph.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={ensureDemoProject}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-        >
-          <Server className="h-4 w-4" />
-          Dùng project demo
-        </button>
       </div>
 
       {message && (
@@ -358,17 +323,108 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
             <GitMerge className="h-4 w-4 text-blue-500" />
             <h3 className="text-sm font-bold text-slate-800">3-5. Tạo Pipeline, nhập GitHub Repo URL và Run Pipeline</h3>
           </div>
-          <button
-            type="button"
-            onClick={runPipeline}
-            disabled={!selectedPipelineId || loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Run Pipeline
-          </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_120px_150px_150px_1.4fr_auto]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
+          <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-4">
+            <div className="mb-4">
+              <h4 className="text-sm font-bold text-slate-800">Tạo pipeline</h4>
+              <p className="mt-1 text-xs text-slate-500">Nhập tên pipeline, branch và GitHub Repo URL cần phân tích.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="min-w-0 md:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-slate-500">Pipeline name</span>
+                <input
+                  value={pipelineForm.name}
+                  onChange={event => setPipelineForm(current => ({ ...current, name: event.target.value }))}
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Pipeline name"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-xs font-semibold text-slate-500">Branch</span>
+                <input
+                  value={pipelineForm.branch}
+                  onChange={event => setPipelineForm(current => ({ ...current, branch: event.target.value }))}
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  placeholder="main"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-xs font-semibold text-slate-500">Provider</span>
+                <select
+                  value={pipelineForm.provider}
+                  onChange={event => setPipelineForm(current => ({ ...current, provider: event.target.value }))}
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option>INTERNAL</option>
+                  <option>GITHUB_ACTIONS</option>
+                  <option>JENKINS</option>
+                  <option>GITLAB_CI</option>
+                  <option>CIRCLECI</option>
+                </select>
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-xs font-semibold text-slate-500">Trigger</span>
+                <select
+                  value={pipelineForm.triggerType}
+                  onChange={event => setPipelineForm(current => ({ ...current, triggerType: event.target.value }))}
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option>MANUAL</option>
+                  <option>PUSH</option>
+                  <option>PULL_REQUEST</option>
+                  <option>SCHEDULE</option>
+                </select>
+              </label>
+              <label className="min-w-0 md:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-slate-500">GitHub Repo URL</span>
+                <input
+                  value={pipelineForm.repoUrl}
+                  onChange={event => setPipelineForm(current => ({ ...current, repoUrl: event.target.value }))}
+                  className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  placeholder="https://github.com/owner/repo.git"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">
+                {!projectId ? 'Chọn project trước khi tạo pipeline.' : 'Pipeline sẽ được gắn với project đang chọn.'}
+              </p>
+              <button
+                type="button"
+                onClick={createPipeline}
+                disabled={!projectId || loading}
+                className="inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              >
+                Tạo Pipeline
+              </button>
+            </div>
+          </div>
+
+          <div className="min-w-0 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+            <div className="mb-4">
+              <h4 className="text-sm font-bold text-slate-800">Run Pipeline</h4>
+              <p className="mt-1 text-xs text-slate-500">Chạy pipeline đã chọn để tạo snapshot và kết quả SBOM.</p>
+            </div>
+            <div className="rounded-lg border border-white/80 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pipeline đang chọn</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-800">{selectedPipeline?.name || 'Chưa chọn pipeline'}</p>
+              <p className="mt-2 break-all text-xs text-slate-500">{selectedPipeline?.repo_url || 'Tạo hoặc chọn một pipeline để chạy.'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={runPipeline}
+              disabled={!selectedPipelineId || loading}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Run Pipeline
+            </button>
+            {!selectedPipelineId && <p className="mt-2 text-xs text-blue-700">Chưa có pipeline được chọn nên chưa thể chạy.</p>}
+          </div>
+        </div>
+
+        <div className="hidden">
           <input value={pipelineForm.name} onChange={event => setPipelineForm(current => ({ ...current, name: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Pipeline name" />
           <input value={pipelineForm.branch} onChange={event => setPipelineForm(current => ({ ...current, branch: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Branch" />
           <select value={pipelineForm.provider} onChange={event => setPipelineForm(current => ({ ...current, provider: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -389,22 +445,22 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
             Tạo Pipeline
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
           {pipelines.map(pipeline => (
             <button
               key={pipeline.pipeline_id}
               type="button"
               onClick={() => setSelectedPipelineId(pipeline.pipeline_id)}
-              className={`rounded-lg border p-4 text-left transition ${selectedPipelineId === pipeline.pipeline_id ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+              className={`min-w-0 rounded-lg border p-4 text-left transition ${selectedPipelineId === pipeline.pipeline_id ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-bold text-slate-800">{pipeline.name}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-slate-800">{pipeline.name}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><GitBranch className="h-3.5 w-3.5" /> {pipeline.branch} · {pipeline.provider}</p>
                 </div>
                 <Badge value={pipeline.latest_status || 'PENDING'} />
               </div>
-              <p className="mt-3 truncate text-xs text-slate-500">{pipeline.repo_url || 'No repository URL'}</p>
+              <p className="mt-3 break-all text-xs text-slate-500">{pipeline.repo_url || 'No repository URL'}</p>
             </button>
           ))}
           {pipelines.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-400">Chưa có pipeline</div>}

@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { metadataInferenceService, InferredMetadata } from './metadataInferenceService';
 
 const execFilePromise = util.promisify(execFile);
 const MAX_BUFFER = 50 * 1024 * 1024;
@@ -13,6 +14,7 @@ export interface GeneratedSbomResult {
   sbom: any;
   normalizedRepoUrl: string;
   repoName: string;
+  inferredMetadata?: InferredMetadata;
 }
 
 const normalizeGitHubRepoUrl = (rawUrl: unknown) => {
@@ -70,7 +72,13 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
     );
 
     const sbom = JSON.parse(stdout);
-    return { sbom, normalizedRepoUrl, repoName };
+    const inferredMetadata = await metadataInferenceService.infer(repoPath, {
+      repoUrl: normalizedRepoUrl,
+      repoName,
+      context: 'manual',
+    });
+    const enrichedSbom = metadataInferenceService.injectIntoCycloneDx(sbom, inferredMetadata);
+    return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata };
   } catch (error: any) {
     const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';
     throw new Error(String(message).trim());

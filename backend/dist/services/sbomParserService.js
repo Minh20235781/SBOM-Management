@@ -17,6 +17,12 @@ const normalizeText = (value) => {
     const trimmed = value.trim();
     return trimmed || null;
 };
+const propertyValue = (properties, name) => {
+    if (!Array.isArray(properties))
+        return null;
+    const found = properties.find((item) => item?.name === name);
+    return normalizeText(found?.value);
+};
 const makeScopedComponentId = (sbomId, rawRef) => {
     const ref = String(rawRef || (0, uuid_1.v4)());
     const candidate = `${sbomId}::${ref}`;
@@ -162,6 +168,8 @@ const parseAndSaveSBOM = async (client, data) => {
             ?? normalizeText(payload.lifecycle_phase)
             ?? normalizeText(payload.lifecyclePhase)
             ?? normalizeText(payload.lifecycle?.phase)
+            ?? propertyValue(metadataObj.properties, 'devops.lifecycle.phase')
+            ?? propertyValue(payload.properties, 'devops.lifecycle.phase')
             ?? normalizeText(payload.lifecyle_phase)
             ?? null;
         // Insert Metadata

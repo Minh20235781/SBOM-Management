@@ -5,8 +5,7 @@ exports.testReportService = {
     build: (repo, run, verificationReport) => {
         const analysis = run.analysis || {};
         const graph = run.graph || {};
-        const passed = Boolean(analysis.sbomId
-            && analysis.componentCount > 0
+        const passed = Boolean(analysis.componentCount > 0
             && analysis.dependencyFileCount > 0
             && verificationReport);
         return {

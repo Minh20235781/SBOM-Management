@@ -1,3 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS public;
+SET search_path TO public;
+
 -- Bảng SBOM Metadata
 CREATE TABLE sbom_metadata
 (
@@ -7,7 +10,7 @@ CREATE TABLE sbom_metadata
     system_id INTEGER,
     tool_components VARCHAR,
     tool_services VARCHAR,
-    lifecycle_phase VARCHAR(100)
+    lifecycle_phase TEXT
 );
 
 -- Bảng Component
@@ -17,12 +20,12 @@ CREATE TABLE component
     sbom_id VARCHAR(255) NOT NULL,
     supplier_name VARCHAR(255),
     name VARCHAR(255) NOT NULL,
-    version VARCHAR(100),
-    purl VARCHAR(255),
-    cpe VARCHAR(255),
+    version TEXT,
+    purl TEXT,
+    cpe TEXT,
     hashes VARCHAR,
     licenses VARCHAR,
-    support_level VARCHAR(100),
+    support_level TEXT,
     end_of_support DATE,
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
 );
@@ -45,14 +48,14 @@ CREATE TABLE vulnerability
     vuln_id SERIAL PRIMARY KEY,
     sbom_id VARCHAR(255) NOT NULL,
     name VARCHAR(255),
-    installed VARCHAR(100),
-    fixed_in VARCHAR(100),
-    package_type VARCHAR(100),
+    installed TEXT,
+    fixed_in TEXT,
+    package_type TEXT,
     vulnerability VARCHAR(255),
     severity VARCHAR(50),
     epss NUMERIC(6,5),
     risk VARCHAR(50),
-    cve_id VARCHAR(100),
+    cve_id TEXT,
     description VARCHAR,
     affected_component_ref VARCHAR(255),
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE,
@@ -130,18 +133,16 @@ CREATE TABLE service
     service_id SERIAL PRIMARY KEY,
     sbom_id VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    version VARCHAR(100),
+    version TEXT,
     description VARCHAR,
     FOREIGN KEY (sbom_id) REFERENCES sbom_metadata(sbom_id) ON DELETE CASCADE
 );
 
 -- Bảng System để lưu các hệ thống / project
-CREATE TABLE
-IF NOT EXISTS system
+CREATE TABLE IF NOT EXISTS system
 (
     system_id SERIAL PRIMARY KEY,
-    name VARCHAR
-(255) UNIQUE NOT NULL,
+    name VARCHAR(255) UNIQUE NOT NULL,
     description TEXT,
     created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_uploaded_at TIMESTAMP
@@ -181,9 +182,9 @@ CREATE TABLE IF NOT EXISTS sbom_components (
     stable_key VARCHAR(500) NOT NULL,
     component_ref VARCHAR(255),
     name VARCHAR(255) NOT NULL,
-    version VARCHAR(100),
+    version TEXT,
     purl VARCHAR(500),
-    ecosystem VARCHAR(100),
+    ecosystem TEXT,
     supplier_name VARCHAR(255),
     licenses VARCHAR,
     hashes VARCHAR,

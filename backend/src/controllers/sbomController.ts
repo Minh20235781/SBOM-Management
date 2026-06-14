@@ -30,6 +30,26 @@ const findOrCreateSystem = async (client: any, name: string) => {
   return inserted.rows[0].system_id;
 };
 
+const countCycloneDxDependencyEdges = (sbom: any) => {
+  const dependencies = Array.isArray(sbom?.dependencies) ? sbom.dependencies : [];
+  return dependencies.reduce((sum: number, dep: any) => sum + (Array.isArray(dep.dependsOn) ? dep.dependsOn.length : 0), 0);
+};
+
+const extractCycloneDxEcosystems = (sbom: any) => {
+  const components = Array.isArray(sbom?.components) ? sbom.components : [];
+  const ecosystems = new Set<string>();
+  for (const component of components) {
+    const purl = typeof component?.purl === 'string' ? component.purl : '';
+    if (purl.startsWith('pkg:')) {
+      const slash = purl.indexOf('/');
+      ecosystems.add(slash > 4 ? purl.slice(4, slash) : 'unknown');
+    } else if (component?.type) {
+      ecosystems.add(String(component.type));
+    }
+  }
+  return [...ecosystems].sort();
+};
+
 const ensureRepositoryPipeline = async (client: any, systemId: number, repoUrl: string) => {
   const normalizedRepoUrl = String(repoUrl || '').trim();
   if (!normalizedRepoUrl) return;
@@ -85,6 +105,10 @@ export const sbomController = {
       if (!payload.system_id && providedSystemName) {
         payload.system_id = await findOrCreateSystem(client, providedSystemName);
       }
+      const providedRepoUrl = typeof req.body?.repoUrl === 'string' ? req.body.repoUrl : null;
+      if (payload.system_id && providedRepoUrl) {
+        await ensureRepositoryPipeline(client, payload.system_id, providedRepoUrl);
+      }
       const sbomId = await parseAndSaveSBOM(client, payload);
       const systemSbomCount = payload.system_id
         ? await client.query('SELECT COUNT(DISTINCT sbom_id)::int AS count FROM sbom_metadata WHERE system_id = $1', [payload.system_id])
@@ -102,6 +126,42 @@ export const sbomController = {
       next(error);
     } finally {
       client.release();
+    }
+  },
+
+  analyzeGitHub: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { repoUrl } = req.body || {};
+      const started = Date.now();
+      const generated = await generateSbomFromGitHubRepo(repoUrl);
+      const sbomText = JSON.stringify(generated.sbom, null, 2);
+      const components = Array.isArray(generated.sbom?.components) ? generated.sbom.components : [];
+      const dependencyEntries = Array.isArray(generated.sbom?.dependencies) ? generated.sbom.dependencies : [];
+
+      res.json({
+        success: true,
+        sbom: generated.sbom,
+        repoUrl: generated.normalizedRepoUrl,
+        repoName: generated.repoName,
+        analysis: {
+          repoUrl: generated.normalizedRepoUrl,
+          repoName: generated.repoName,
+          bomFormat: generated.sbom?.bomFormat || 'CycloneDX',
+          specVersion: generated.sbom?.specVersion || null,
+          serialNumber: generated.sbom?.serialNumber || null,
+          componentCount: components.length,
+          dependencyCount: countCycloneDxDependencyEdges(generated.sbom),
+          dependencyReferenceCount: dependencyEntries.length,
+          ecosystems: extractCycloneDxEcosystems(generated.sbom),
+          toolInfo: 'Syft CycloneDX JSON',
+          createdTimestamp: generated.sbom?.metadata?.timestamp || new Date().toISOString(),
+          sbomSizeBytes: Buffer.byteLength(sbomText, 'utf8'),
+          analysisDurationMs: Date.now() - started,
+          inferredMetadata: generated.inferredMetadata || null,
+        },
+      });
+    } catch (error) {
+      next(error);
     }
   },
 

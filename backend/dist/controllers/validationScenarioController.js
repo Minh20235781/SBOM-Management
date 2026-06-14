@@ -68,6 +68,14 @@ exports.validationScenarioController = {
             next(error);
         }
     },
+    verifyUploaded: async (req, res, next) => {
+        try {
+            res.json(await validationScenarioService_1.validationScenarioService.verifyUploaded(firstParam(req.params.runId), req.body?.sbom, req.body?.fileName));
+        }
+        catch (error) {
+            next(error);
+        }
+    },
     report: async (req, res, next) => {
         try {
             const report = await validationScenarioService_1.validationScenarioService.report(firstParam(req.params.runId));

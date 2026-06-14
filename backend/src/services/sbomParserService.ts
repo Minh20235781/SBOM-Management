@@ -14,6 +14,12 @@ const normalizeText = (value: unknown) => {
   return trimmed || null;
 };
 
+const propertyValue = (properties: unknown, name: string) => {
+  if (!Array.isArray(properties)) return null;
+  const found = properties.find((item: any) => item?.name === name);
+  return normalizeText(found?.value);
+};
+
 const makeScopedComponentId = (sbomId: string, rawRef: unknown) => {
   const ref = String(rawRef || uuidv4());
   const candidate = `${sbomId}::${ref}`;
@@ -185,6 +191,8 @@ export const parseAndSaveSBOM = async (client: PoolClient, data: any) => {
       ?? normalizeText((payload as any).lifecycle_phase)
       ?? normalizeText((payload as any).lifecyclePhase)
       ?? normalizeText((payload as any).lifecycle?.phase)
+      ?? propertyValue((metadataObj as any).properties, 'devops.lifecycle.phase')
+      ?? propertyValue((payload as any).properties, 'devops.lifecycle.phase')
       ?? normalizeText((payload as any).lifecyle_phase)
       ?? null;
 

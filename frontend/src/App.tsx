@@ -96,7 +96,7 @@ function App() {
       // If caller provided { sbom, systemName }
       if (rawData && typeof rawData === 'object' && (rawData as any).sbom) {
         const payload = rawData as any;
-        uploadBody = { sbom: payload.sbom, systemName: payload.systemName };
+        uploadBody = { sbom: payload.sbom, systemName: payload.systemName, repoUrl: payload.repoUrl };
         if (payload.systemName) {
           // Create or get system
           const sysRes = await fetch(`${API_BASE}/systems`, {

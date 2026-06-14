@@ -49,7 +49,22 @@ type Analysis = {
   sbomPath: string;
   toolInfo: string;
   createdTimestamp: string;
+  inferredMetadata?: InferredMetadata | null;
   confirmed?: boolean;
+};
+
+type InferredField = {
+  value: string | string[];
+  source: string;
+  confidence: 'high' | 'medium' | 'low';
+  reason?: string;
+  suggestions?: string[];
+};
+
+type InferredMetadata = {
+  authors: InferredField;
+  services: InferredField;
+  lifecyclePhase: InferredField;
 };
 
 type Graph = {
@@ -88,6 +103,14 @@ type TestReport = {
   actualResult: string;
   result: 'PASS' | 'FAIL';
   evidence: Record<string, unknown>;
+};
+
+type UploadedSbom = {
+  fileName: string;
+  sbom: any;
+  componentCount: number;
+  dependencyCount: number;
+  changes: string[];
 };
 
 type StepAction = {
@@ -206,6 +229,17 @@ const formatBytes = (bytes?: number) => {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 };
 
+const formatInferredValue = (field?: InferredField) => {
+  if (!field) return 'Không phát hiện được từ mã nguồn';
+  return Array.isArray(field.value) ? field.value.join(', ') : field.value;
+};
+
+const confidenceClass = (confidence?: string) => {
+  if (confidence === 'high') return 'border-emerald-100 bg-emerald-50 text-emerald-700';
+  if (confidence === 'medium') return 'border-blue-100 bg-blue-50 text-blue-700';
+  return 'border-amber-100 bg-amber-50 text-amber-700';
+};
+
 const formatEvidenceValue = (value: unknown) =>
   value === null || value === undefined || value === '' ? '-' : String(value);
 
@@ -218,6 +252,24 @@ const downloadJson = (fileName: string, value: unknown) => {
   anchor.click();
   URL.revokeObjectURL(url);
 };
+
+const componentKey = (component: any, index: number) =>
+  String(component?.['bom-ref'] || component?.purl || `${component?.name || 'unknown'}@${component?.version || 'unknown'}#${index}`);
+
+const componentLabel = (component: any, index: number) =>
+  `${component?.name || 'unknown'}@${component?.version || 'no-version'} (${componentKey(component, index)})`;
+
+const countDependencyEdges = (sbom: any) =>
+  (Array.isArray(sbom?.dependencies) ? sbom.dependencies : [])
+    .reduce((sum: number, dep: any) => sum + (Array.isArray(dep?.dependsOn) ? dep.dependsOn.length : 0), 0);
+
+const buildUploadedSbomState = (fileName: string, sbom: any, changes: string[] = []): UploadedSbom => ({
+  fileName,
+  sbom,
+  componentCount: Array.isArray(sbom?.components) ? sbom.components.length : 0,
+  dependencyCount: countDependencyEdges(sbom),
+  changes,
+});
 
 const actionButtonClass = (action: StepAction) => {
   if (action.primary) return 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:hover:bg-blue-600';
@@ -339,15 +391,21 @@ const SbomValidationScenarios: React.FC = () => {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [generatedSbom, setGeneratedSbom] = useState<any | null>(null);
+  const [uploadedSbom, setUploadedSbom] = useState<UploadedSbom | null>(null);
   const [verification, setVerification] = useState<VerificationReport | null>(null);
   const [testReport, setTestReport] = useState<TestReport | null>(null);
   const [faultyInfo, setFaultyInfo] = useState<any | null>(null);
+  const [componentToRemove, setComponentToRemove] = useState('');
+  const [componentToMutate, setComponentToMutate] = useState('');
+  const [mutationVersion, setMutationVersion] = useState('0.0.0-demo-mismatch');
+  const [newComponent, setNewComponent] = useState({ name: 'fake-lib-demo', version: '9.9.9', ecosystem: 'npm' });
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const analysisSectionRef = useRef<HTMLElement | null>(null);
   const graphSectionRef = useRef<HTMLElement | null>(null);
   const selectedRepo = repositories.find(repo => repo.id === selectedRepoId) || repositories[0];
+  const uploadedComponents: any[] = Array.isArray(uploadedSbom?.sbom?.components) ? uploadedSbom.sbom.components : [];
 
   const loadCatalog = async () => {
     setCatalogLoading(true);
@@ -386,9 +444,12 @@ const SbomValidationScenarios: React.FC = () => {
     setAnalysis(null);
     setGraph(null);
     setGeneratedSbom(null);
+    setUploadedSbom(null);
     setVerification(null);
     setTestReport(null);
     setFaultyInfo(null);
+    setComponentToRemove('');
+    setComponentToMutate('');
   };
 
   const analyze = () => runAction('Analyze Source', async () => {
@@ -414,6 +475,69 @@ const SbomValidationScenarios: React.FC = () => {
     setAnalysis(current => current ? { ...current, confirmed: true } : current);
   });
 
+  const handleSbomFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      const text = await file.text();
+      const sbom = JSON.parse(text);
+      if (!Array.isArray(sbom.components)) throw new Error('File SBOM phải là CycloneDX JSON có trường components.');
+      setUploadedSbom(buildUploadedSbomState(file.name, sbom));
+      setVerification(null);
+      setTestReport(null);
+      setFaultyInfo(null);
+      setComponentToRemove('');
+      setComponentToMutate('');
+    } catch (error) {
+      setUploadedSbom(null);
+      setError(error instanceof Error ? error.message : 'Không đọc được file SBOM JSON.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const updateUploadedSbom = (updater: (draft: any) => string | null) => {
+    if (!uploadedSbom) return;
+    const draft = JSON.parse(JSON.stringify(uploadedSbom.sbom));
+    const change = updater(draft);
+    if (!change) return;
+    setUploadedSbom(buildUploadedSbomState(uploadedSbom.fileName, draft, [...uploadedSbom.changes, change]));
+    setVerification(null);
+    setTestReport(null);
+    setFaultyInfo(null);
+  };
+
+  const removeUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const removed = components.find((component: any, index: number) => componentKey(component, index) === componentToRemove);
+    if (!removed) return null;
+    draft.components = components.filter((component: any, index: number) => componentKey(component, index) !== componentToRemove);
+    setComponentToRemove('');
+    return `Xóa ${removed.name || 'unknown'}@${removed.version || 'no-version'}`;
+  });
+
+  const mutateUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const target = components.find((component: any, index: number) => componentKey(component, index) === componentToMutate);
+    if (!target) return null;
+    const before = `${target.name || 'unknown'}@${target.version || 'no-version'}`;
+    target.version = mutationVersion || '0.0.0-demo-mismatch';
+    setComponentToMutate('');
+    return `Sửa version ${before} -> ${target.version}`;
+  });
+
+  const addUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const name = newComponent.name.trim() || 'fake-lib-demo';
+    const version = newComponent.version.trim() || '9.9.9';
+    const ecosystem = newComponent.ecosystem.trim() || 'npm';
+    const purl = `pkg:${ecosystem}/${name}@${version}`;
+    components.push({ type: 'library', name, version, purl, 'bom-ref': purl });
+    draft.components = components;
+    return `Thêm ${name}@${version}`;
+  });
+
   const generate = () => runAction('Generate SBOM', async () => {
     if (!analysis?.runId) return;
     const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/generate`, { method: 'POST' });
@@ -423,6 +547,32 @@ const SbomValidationScenarios: React.FC = () => {
   });
 
   const createFaulty = () => runAction('Create Faulty SBOM Demo', async () => {
+    if (uploadedSbom) {
+      const faulty = JSON.parse(JSON.stringify(uploadedSbom.sbom));
+      const components = Array.isArray(faulty.components) ? faulty.components : [];
+      const removedComponent = components.length > 0 ? components.shift() : null;
+      const versionMutatedComponent = components.find((component: any) => component?.name);
+      if (versionMutatedComponent) versionMutatedComponent.version = '0.0.0-demo-mismatch';
+      components.push({
+        type: 'library',
+        name: 'fake-lib-demo',
+        version: '9.9.9',
+        purl: 'pkg:npm/fake-lib-demo@9.9.9',
+        'bom-ref': 'pkg:npm/fake-lib-demo@9.9.9',
+      });
+      faulty.components = components;
+      setFaultyInfo({
+        sbom: faulty,
+        changes: {
+          removedComponent: removedComponent ? `${removedComponent.name || 'unknown'}@${removedComponent.version || 'unknown'}` : null,
+          addedComponent: 'fake-lib-demo@9.9.9',
+          versionMutatedComponent: versionMutatedComponent ? `${versionMutatedComponent.name || 'unknown'} -> 0.0.0-demo-mismatch` : null,
+        },
+      });
+      setVerification(null);
+      setTestReport(null);
+      return;
+    }
     if (!analysis?.runId) return;
     const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/faulty`, { method: 'POST' });
     const data = await res.json();
@@ -432,6 +582,22 @@ const SbomValidationScenarios: React.FC = () => {
 
   const verify = (useFaulty: boolean) => runAction(useFaulty ? 'Verify Faulty SBOM' : 'Verify SBOM', async () => {
     if (!analysis?.runId) return;
+    const targetSbom = useFaulty ? faultyInfo?.sbom : uploadedSbom?.sbom;
+    if (targetSbom) {
+      const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/verify-uploaded`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sbom: targetSbom,
+          fileName: useFaulty ? `faulty-${uploadedSbom?.fileName || 'sbom.json'}` : uploadedSbom?.fileName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Kiểm chứng SBOM tải lên thất bại.');
+      setVerification(data.verificationReport);
+      setTestReport(data.testReport);
+      return;
+    }
     const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -511,25 +677,25 @@ const SbomValidationScenarios: React.FC = () => {
     },
     {
       title: 'Kiểm chứng SBOM',
-      description: 'So sánh SBOM với source thật; có thể tạo SBOM lỗi để demo missing, extra và version mismatch.',
+      description: 'Tải file SBOM CycloneDX JSON từ máy lên, hệ thống phân tích lại source repo thật rồi so sánh hai phía.',
       actions: [
         {
           label: 'Create Faulty SBOM Demo',
           icon: <TriangleAlert className="h-4 w-4" />,
           onClick: createFaulty,
-          disabled: !generatedSbom || Boolean(loadingAction),
+          disabled: (!uploadedSbom && !generatedSbom) || Boolean(loadingAction),
           loading: loadingAction === 'Create Faulty SBOM Demo',
           warning: true,
-          helper: !generatedSbom ? 'Cần Generate SBOM trước.' : 'Đang có thao tác khác chạy.',
+          helper: !uploadedSbom && !generatedSbom ? 'Cần tải SBOM từ máy lên hoặc Generate SBOM trước.' : 'Đang có thao tác khác chạy.',
         },
         {
           label: 'Verify SBOM',
           icon: <ShieldCheck className="h-4 w-4" />,
           onClick: () => verify(false),
-          disabled: !generatedSbom || Boolean(loadingAction),
+          disabled: !analysis || (!uploadedSbom && !generatedSbom) || Boolean(loadingAction),
           loading: loadingAction === 'Verify SBOM',
-          primary: Boolean(generatedSbom),
-          helper: !generatedSbom ? 'Cần Generate SBOM trước.' : 'Đang có thao tác khác chạy.',
+          primary: Boolean(analysis && (uploadedSbom || generatedSbom)),
+          helper: !analysis ? 'Cần Analyze Source trước.' : !uploadedSbom && !generatedSbom ? 'Cần tải file SBOM từ máy lên.' : 'Đang có thao tác khác chạy.',
         },
         {
           label: 'Verify Faulty SBOM',
@@ -559,18 +725,11 @@ const SbomValidationScenarios: React.FC = () => {
   return (
     <div className="space-y-6">
       <header className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-4xl">
-            <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Demo kiểm chứng trên dữ liệu thật</p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-900">Kiểm chứng SBOM</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Phạm vi hiện tại chỉ xử lý repository GitHub thật của ứng dụng web trong một kho lưu trữ. Multi-repo và microservice nhiều repo là hướng mở rộng, không phải hỗ trợ của phiên bản demo này.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className={scopeBadge}>Ứng dụng web</span>
-            <span className={repoBadge}>Một kho lưu trữ</span>
-          </div>
+        <div className="max-w-4xl">
+          <h2 className="text-2xl font-bold text-slate-900">Kiểm chứng SBOM</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Phạm vi hiện tại chỉ xử lý repository GitHub thật của ứng dụng web trong một kho lưu trữ. Multi-repo và microservice nhiều repo là hướng mở rộng, không phải hỗ trợ của phiên bản demo này.
+          </p>
         </div>
       </header>
 
@@ -591,7 +750,7 @@ const SbomValidationScenarios: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
+      <div className="space-y-6">
         <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -725,6 +884,142 @@ const SbomValidationScenarios: React.FC = () => {
             )}
           </section>
 
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">SBOM tải lên từ máy</p>
+                <h3 className="mt-1 text-lg font-bold text-slate-900">File SBOM dùng để kiểm chứng</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                  Chọn repository thật, tải file SBOM CycloneDX JSON tương ứng lên, sau đó chạy Analyze Source và Verify SBOM để so sánh source thật với file này.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                <FileJson className="h-4 w-4" />
+                Tải file SBOM
+                <input type="file" accept=".json,application/json" onChange={handleSbomFile} className="hidden" />
+              </label>
+            </div>
+
+            {uploadedSbom ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">File</p>
+                    <p className="mt-1 break-all text-sm font-semibold text-slate-900">{uploadedSbom.fileName}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Components trong SBOM</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{uploadedSbom.componentCount}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Dependencies trong SBOM</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{uploadedSbom.dependencyCount}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Xóa component</p>
+                    <select
+                      value={componentToRemove}
+                      onChange={event => setComponentToRemove(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">Chọn component</option>
+                      {uploadedComponents.map((component, index) => (
+                        <option key={componentKey(component, index)} value={componentKey(component, index)}>
+                          {componentLabel(component, index)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={removeUploadedComponent}
+                      disabled={!componentToRemove}
+                      className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Xóa khỏi SBOM
+                    </button>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Sửa version</p>
+                    <select
+                      value={componentToMutate}
+                      onChange={event => setComponentToMutate(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">Chọn component</option>
+                      {uploadedComponents.map((component, index) => (
+                        <option key={componentKey(component, index)} value={componentKey(component, index)}>
+                          {componentLabel(component, index)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={mutationVersion}
+                      onChange={event => setMutationVersion(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Version mới"
+                    />
+                    <button
+                      type="button"
+                      onClick={mutateUploadedComponent}
+                      disabled={!componentToMutate}
+                      className="mt-3 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Sửa version
+                    </button>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Thêm component</p>
+                    <input
+                      value={newComponent.name}
+                      onChange={event => setNewComponent(current => ({ ...current, name: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Tên package"
+                    />
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input
+                        value={newComponent.version}
+                        onChange={event => setNewComponent(current => ({ ...current, version: event.target.value }))}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        placeholder="Version"
+                      />
+                      <input
+                        value={newComponent.ecosystem}
+                        onChange={event => setNewComponent(current => ({ ...current, ecosystem: event.target.value }))}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        placeholder="npm, maven..."
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addUploadedComponent}
+                      className="mt-3 w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Thêm vào SBOM
+                    </button>
+                  </div>
+                </div>
+
+                {uploadedSbom.changes.length > 0 && (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p className="font-semibold">Thay đổi trên SBOM upload</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {uploadedSbom.changes.map((change, index) => <li key={`${change}-${index}`}>{change}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Chưa có file SBOM. Hãy tải file CycloneDX JSON đã lưu trên máy để kiểm chứng với repository đang chọn.
+              </div>
+            )}
+          </section>
+
           <section className="space-y-3">
             {stepGroups.map((group, index) => (
               <StepGroupCard key={group.title} index={index} group={group} />
@@ -748,6 +1043,49 @@ const SbomValidationScenarios: React.FC = () => {
               </div>
             ))}
           </div>
+
+          {analysis.inferredMetadata && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900">Thông tin metadata do công cụ phát hiện</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Các trường này được suy luận từ Git history, file metadata và cấu trúc repository. Người dùng chỉ xem lại và xác nhận.
+                  </p>
+                </div>
+                {analysis.confirmed && (
+                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    Đã xác nhận
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                {[
+                  ['Tác giả', analysis.inferredMetadata.authors],
+                  ['Dịch vụ', analysis.inferredMetadata.services],
+                  ['Giai đoạn vòng đời', analysis.inferredMetadata.lifecyclePhase],
+                ].map(([label, field]) => {
+                  const item = field as InferredField;
+                  return (
+                    <div key={label as string} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label as string}</p>
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${confidenceClass(item.confidence)}`}>
+                          {item.confidence}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{formatInferredValue(item)}</p>
+                      <p className="mt-2 text-xs leading-4 text-slate-500">Nguồn: {item.source}</p>
+                      {item.reason && <p className="mt-1 text-xs leading-4 text-amber-700">{item.reason}</p>}
+                      {item.suggestions && item.suggestions.length > 0 && (
+                        <p className="mt-1 text-xs leading-4 text-blue-700">Gợi ý thêm: {item.suggestions.join(', ')}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -816,6 +1154,22 @@ const SbomValidationScenarios: React.FC = () => {
             <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Tool</p><p className="text-sm font-semibold">{generatedSbom.toolInfo}</p></div>
             <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Created</p><p className="text-sm font-semibold">{new Date(generatedSbom.createdTimestamp).toLocaleString('vi-VN')}</p></div>
           </div>
+          {generatedSbom.inferredMetadata && (
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Tác giả</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.authors)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Dịch vụ</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.services)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Giai đoạn vòng đời</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.lifecyclePhase)}</p>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

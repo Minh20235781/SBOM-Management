@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validationScenarioService = void 0;
 const promises_1 = __importDefault(require("fs/promises"));
+const path_1 = __importDefault(require("path"));
 const db_1 = require("../config/db");
 const sbomParserService_1 = require("./sbomParserService");
 const dependencyFileDetectorService_1 = require("./dependencyFileDetectorService");
@@ -15,6 +16,7 @@ const sbomGenerationService_1 = require("./sbomGenerationService");
 const sbomVerificationService_1 = require("./sbomVerificationService");
 const sourceCloneService_1 = require("./sourceCloneService");
 const testReportService_1 = require("./testReportService");
+const metadataInferenceService_1 = require("./metadataInferenceService");
 const findOrCreateSystem = async (client, name, description) => {
     const existing = await client.query('SELECT system_id FROM system WHERE LOWER(name) = LOWER($1) LIMIT 1', [name]);
     if (existing.rows[0])
@@ -109,15 +111,19 @@ exports.validationScenarioService = {
             const sourcePath = await sourceCloneService_1.sourceCloneService.cloneOrUpdate(repo.id, toGitCloneUrl(repo.githubUrl));
             const dependencyFiles = await dependencyFileDetectorService_1.dependencyFileDetectorService.detect(sourcePath);
             const generated = await sbomGenerationService_1.sbomGenerationService.generateCycloneDxFromSource(sourcePath, repo.id);
-            const graph = dependencyGraphService_1.dependencyGraphService.buildFromSbom(generated.sbom, repo.projectName);
-            const components = Array.isArray(generated.sbom.components) ? generated.sbom.components : [];
-            const dependencies = Array.isArray(generated.sbom.dependencies) ? generated.sbom.dependencies : [];
+            const inferredMetadata = await metadataInferenceService_1.metadataInferenceService.infer(sourcePath, {
+                repoUrl: repo.githubUrl,
+                repoName: repo.projectName,
+                context: 'manual',
+            });
+            const enrichedSbom = metadataInferenceService_1.metadataInferenceService.injectIntoCycloneDx(generated.sbom, inferredMetadata);
+            await promises_1.default.writeFile(generated.sbomPath, JSON.stringify(enrichedSbom, null, 2), 'utf8');
+            const graph = dependencyGraphService_1.dependencyGraphService.buildFromSbom(enrichedSbom, repo.projectName);
+            const components = Array.isArray(enrichedSbom.components) ? enrichedSbom.components : [];
+            const dependencies = Array.isArray(enrichedSbom.dependencies) ? enrichedSbom.dependencies : [];
             const saveClient = await db_1.pool.connect();
-            let sbomId = '';
             try {
                 await saveClient.query('BEGIN');
-                const systemId = repo.systemId || await findOrCreateSystem(saveClient, repo.projectName, `${repo.applicationType}; ${repo.repoScope}; ${repo.githubUrl}`);
-                sbomId = await (0, sbomParserService_1.parseAndSaveSBOM)(saveClient, { sbom: generated.sbom, system_id: systemId });
                 const analysis = {
                     runId,
                     scenarioId: repo.id,
@@ -134,17 +140,18 @@ exports.validationScenarioService = {
                     ecosystems: ecosystemSummary(components),
                     analysisDurationMs: generated.analysisDurationMs,
                     sbomSizeBytes: generated.sbomSizeBytes,
-                    sbomId,
+                    sbomId: enrichedSbom.serialNumber || null,
                     sbomPath: generated.sbomPath,
                     toolInfo: generated.toolInfo,
                     createdTimestamp: generated.createdTimestamp,
+                    inferredMetadata,
                     confirmed: false,
                 };
                 await saveRun(saveClient, {
                     ...baseRun,
                     status: 'ANALYZED',
                     sourcePath,
-                    sbomId,
+                    sbomId: null,
                     sbomPath: generated.sbomPath,
                     analysis,
                     graph,
@@ -215,10 +222,47 @@ exports.validationScenarioService = {
         if (!run.sbom_path)
             throw new Error('No generated SBOM path found for this run.');
         const sbom = JSON.parse(await promises_1.default.readFile(run.sbom_path, 'utf8'));
+        const repo = await repositoryCatalogService_1.repositoryCatalogService.getById(run.scenario_id);
+        const client = await db_1.pool.connect();
+        let sbomId = run.sbom_id;
+        try {
+            await client.query('BEGIN');
+            const systemId = repo.systemId || await findOrCreateSystem(client, repo.projectName, `${repo.applicationType}; ${repo.repoScope}; ${repo.githubUrl}`);
+            sbomId = await (0, sbomParserService_1.parseAndSaveSBOM)(client, { sbom, system_id: systemId });
+            await saveRun(client, {
+                runId: run.run_id,
+                scenarioId: run.scenario_id,
+                projectName: run.project_name,
+                githubUrl: run.github_url,
+                applicationType: run.application_type,
+                repoScope: run.repo_scope,
+                architectureType: run.architecture_type,
+                status: 'GENERATED',
+                sourcePath: run.source_path,
+                sbomId,
+                sbomPath: run.sbom_path,
+                faultySbomPath: run.faulty_sbom_path,
+                confirmed: run.confirmed,
+                analysis: { ...run.analysis, sbomId },
+                graph: run.graph,
+                verificationReport: run.verification_report,
+                testReport: run.test_report,
+            });
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
         return {
             runId,
             sbom,
             sbomPath: run.sbom_path,
+            sbomId,
+            inferredMetadata: run.analysis?.inferredMetadata || null,
             metadata: sbom.metadata || {},
             components: sbom.components || [],
             dependencies: sbom.dependencies || [],
@@ -296,6 +340,63 @@ exports.validationScenarioService = {
             });
             await client.query('COMMIT');
             return { runId, verificationReport, testReport };
+        }
+        finally {
+            client.release();
+        }
+    },
+    verifyUploaded: async (runId, sbom, fileName = 'uploaded-sbom.json') => {
+        const run = await readRun(runId);
+        if (!run.source_path)
+            throw new Error('Source code repository has not been cloned for this run.');
+        if (!sbom || typeof sbom !== 'object')
+            throw new Error('Uploaded SBOM JSON is required.');
+        if (!Array.isArray(sbom.components))
+            throw new Error('Uploaded SBOM must be a CycloneDX JSON document with components.');
+        const workDir = await sourceCloneService_1.sourceCloneService.ensureWorkDir();
+        const outputDir = path_1.default.join(workDir, 'generated');
+        await promises_1.default.mkdir(outputDir, { recursive: true });
+        const safeFileName = String(fileName || 'uploaded-sbom.json').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const uploadedSbomPath = path_1.default.join(outputDir, `${run.scenario_id}-${Date.now()}-${safeFileName}`);
+        await promises_1.default.writeFile(uploadedSbomPath, JSON.stringify(sbom, null, 2), 'utf8');
+        const verificationReport = await sbomVerificationService_1.sbomVerificationService.verifySourceAgainstSbom(run.source_path, sbom);
+        const repo = await repositoryCatalogService_1.repositoryCatalogService.getById(run.scenario_id);
+        const analysis = {
+            ...(run.analysis || {}),
+            uploadedSbomFileName: fileName,
+            uploadedSbomPath,
+            uploadedSbomComponentCount: Array.isArray(sbom.components) ? sbom.components.length : 0,
+            uploadedSbomDependencyCount: Array.isArray(sbom.dependencies) ? sbom.dependencies.length : 0,
+        };
+        const testReport = testReportService_1.testReportService.build(repo, { ...run, analysis, sbom_path: uploadedSbomPath, verification_report: verificationReport }, verificationReport);
+        const client = await db_1.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await saveRun(client, {
+                runId: run.run_id,
+                scenarioId: run.scenario_id,
+                projectName: run.project_name,
+                githubUrl: run.github_url,
+                applicationType: run.application_type,
+                repoScope: run.repo_scope,
+                architectureType: run.architecture_type,
+                status: 'UPLOADED_SBOM_VERIFIED',
+                sourcePath: run.source_path,
+                sbomId: run.sbom_id,
+                sbomPath: uploadedSbomPath,
+                faultySbomPath: run.faulty_sbom_path,
+                confirmed: run.confirmed,
+                analysis,
+                graph: run.graph,
+                verificationReport,
+                testReport,
+            });
+            await client.query('COMMIT');
+            return { runId, uploadedSbomPath, uploadedFileName: fileName, verificationReport, testReport };
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
         }
         finally {
             client.release();

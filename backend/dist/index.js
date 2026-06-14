@@ -33,6 +33,7 @@ exports.app.get('/', (req, res) => {
 exports.app.use(errorMiddleware_1.errorHandler);
 const startServer = async () => {
     await (0, db_1.checkDbConnection)();
+    await (0, db_1.ensureCoreSchema)();
     await (0, db_1.ensureVulnerabilitySchema)();
     await (0, db_1.ensureSbomAlgorithmSchema)();
     await (0, db_1.ensureCicdSchema)();
