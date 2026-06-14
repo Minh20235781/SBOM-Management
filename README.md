@@ -1,207 +1,365 @@
-# Công cụ website quản lý thông tin hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials)
+# SBOM Management
 
-[![HUST](https://img.shields.io/badge/University-HUST-red.svg)](https://www.hust.edu.vn/)
-[![DevOps](https://img.shields.io/badge/Process-DevSecOps-blue.svg)]()
-[![Security](https://img.shields.io/badge/Security-Supply_Chain-green.svg)]()
+Nền tảng quản lý và kiểm chứng SBOM cho quy trình DevSecOps, tập trung vào việc phân tích dependency, sinh SBOM, lưu metadata/component/dependency và kiểm chứng SBOM với mã nguồn thật.
 
-> **Đồ án Nghiên cứu Tốt nghiệp 1 (GR1)**
->
-> **Đề tài:** Xây dựng nền tảng quản lý thông tin hệ thống theo quy trình DevOps dựa trên SBOM (Software Bill of Materials).
->
-> **Sinh viên thực hiện:** Nguyễn Nhật Minh - 20235781 | **Giảng viên hướng dẫn:** TS. Vũ Thị Hương Giang
+> Đồ án Nghiên cứu Tốt nghiệp 1  
+> Đề tài: Xây dựng nền tảng quản lý thông tin hệ thống theo quy trình DevOps dựa trên SBOM.  
+> Sinh viên thực hiện: Nguyễn Nhật Minh - 20235781  
+> Giảng viên hướng dẫn: TS. Vũ Thị Hương Giang
 
----
+## Phạm Vi Hiện Tại
 
-## Giới thiệu
+Phiên bản hiện tại chỉ xử lý:
 
-Trong kỷ nguyên chuyển đổi số, an ninh chuỗi cung ứng phần mềm trở nên cấp thiết hơn bao giờ hết. **SBOM-Management** là nền tảng quản lý tập trung thông tin hệ thống, đóng vai trò như một "Hộ chiếu linh kiện" cho phần mềm. Bằng cách ứng dụng tiêu chuẩn SBOM, hệ thống cho phép tự động hóa việc theo dõi các thành phần mã nguồn mở, phụ thuộc bắc cầu và rủi ro an ninh trong suốt vòng đời DevSecOps.
+- Application type: Web Application
+- Repo scope: Single Repository
+- Source input: một GitHub repository thật
+- SBOM format chính: CycloneDX JSON
 
-**Mục tiêu cốt lõi:**
+Multi-repo và microservice nhiều repository hiện chỉ là hướng mở rộng, không khẳng định là chức năng đã hỗ trợ trong phiên bản này.
 
-- **Minh bạch hóa:** Nắm rõ mọi thư viện đang vận hành trong hệ thống.
-- **Tự động hóa:** Trích xuất và phân tích dữ liệu trực tiếp từ Pipeline CI/CD.
-- **Kiểm soát biến động:** Phát hiện sự thay đổi thành phần giữa các phiên bản Build (Drift Analysis).
+## Tính Năng Chính
 
-## 🛠 Thuật toán Cốt lõi
+- Quản lý hệ thống/project và SBOM đã upload hoặc generate.
+- Phân tích GitHub repository bằng Syft để sinh CycloneDX SBOM.
+- Tự động phát hiện dependency files như `package.json`, `pom.xml`, `requirements.txt`, `composer.json`, `Gemfile`, `go.mod`.
+- Lưu metadata, component, dependency, vulnerability và snapshot SBOM vào PostgreSQL.
+- Hiển thị dependency graph theo component/package và quan hệ phụ thuộc.
+- Pipeline demo cho CI/CD SBOM: tạo task, tạo pipeline, nhập GitHub Repo URL, chạy pipeline và xem snapshot.
+- Kiểm chứng SBOM với source thật:
+  - Chọn repository thật.
+  - Tải file SBOM CycloneDX JSON từ máy lên.
+  - Phân tích lại source repository.
+  - So sánh source với SBOM upload.
+  - Báo cáo `MATCHED`, `MISSING_IN_SBOM`, `EXTRA_IN_SBOM`, `VERSION_MISMATCH`, Trust Score và Trust Level.
+- Demo SBOM lỗi:
+  - Xóa component khỏi SBOM upload.
+  - Thêm component giả hoặc component bất kỳ.
+  - Sửa version component.
+  - Verify lại để chứng minh hệ thống phát hiện sai lệch.
 
-Hệ thống không chỉ là công cụ lưu trữ mà còn thực hiện các xử lý logic chuyên sâu:
-
-- **Thuật toán Duyệt và Trực quan hóa Đồ thị phụ thuộc:** Sử dụng DFS/BFS để chuyển đổi dữ liệu `cyclonedx.json` thành cấu trúc cây đa tầng, hỗ trợ truy vết nguồn gốc (Provenance).
-- **Thuật toán Phân tích sai lệch (Drift Analysis):** So sánh bản chụp (Snapshot) SBOM giữa các lần Build dựa trên khóa định danh PURL để phát hiện các thư viện bị thêm/sửa/xóa hoặc hạ cấp phiên bản trái phép.
-
-## Kiến trúc Hệ thống
-
-Nền tảng được thiết kế theo mô hình 3 lớp đồng bộ:
+## Kiến Trúc
 
 ```text
-[ Developer ] --(git push)--> [ GitHub Actions / Pipeline ]
-                                       |
-                                [ SBOM Generation ] --(Syft/Trivy Scanners)
-                                       |
-                                 (POST .json)
-                                       v
-[ Dashboard ] <------------> [ API Aggregator ] <--------> [ PostgreSQL ]
-(React/Consumer)             (NodeJS/Express)            (Normalized Schema)
-      ^                             |                            |
-      |                      [ Parser Module ] <---(Vulnerability Data)---
+Frontend React/Vite
+        |
+        v
+Backend Express/TypeScript
+        |
+        +-- PostgreSQL
+        +-- Git clone/update source repository
+        +-- Syft CycloneDX generation
+        +-- SBOM parser and verification services
 ```
 
-## Tính năng chính
+Các service chính trong backend:
 
-- **SBOM Aggregator:** Tiếp nhận tự động dữ liệu từ Pipeline hoặc Upload thủ công (Hỗ trợ CycloneDX 1.5, SPDX 2.3).
-- **Inventory Management:** Quản lý chi tiết linh kiện: Supplier, Version, PURL, License, Support Level.
-- **Security Insights:** Tự động ánh xạ CVE và hiển thị biểu đồ mức độ nghiêm trọng của lỗ hổng.
-- **Dependency Tree:** Trực quan hóa mối quan hệ phụ thuộc đa tầng (Transitive Dependencies).
-- **Compliance Tracking:** Theo dõi tính tuân thủ giấy phép mã nguồn mở và vòng đời sản phẩm.
+- `RepositoryCatalogService`: lấy danh sách repository web thật đã lưu trong hệ thống.
+- `SourceCloneService`: clone hoặc cập nhật source repository.
+- `DependencyFileDetectorService`: phát hiện file dependency.
+- `SbomGenerationService`: chạy Syft và sinh CycloneDX JSON.
+- `MetadataInferenceService`: suy luận tác giả, dịch vụ, lifecycle phase từ source.
+- `DependencyGraphService`: dựng dependency graph từ SBOM.
+- `SbomVerificationService`: phân tích lại source và so sánh với SBOM.
+- `FaultySbomDemoService`: tạo SBOM lỗi để demo.
+- `TestReportService`: sinh báo cáo kiểm thử và evidence.
 
-## Công nghệ sử dụng
+## Công Nghệ
 
-| Thành phần     | Công nghệ                                         |
-| :------------- | :------------------------------------------------ |
-| **Frontend**   | ReactJS, TypeScript, Vite, Tailwind CSS, Recharts |
-| **Backend**    | Node.js (Express), TypeScript, Multer             |
-| **Database**   | PostgreSQL (Relational Mapping cho SBOM Metadata) |
-| **DevOps**     | Docker, Docker Compose, GitHub Actions            |
-| **SBOM Tools** | Syft (Generator), Grype/Trivy (Vulnerability DB)  |
+| Thành phần | Công nghệ |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Recharts, lucide-react |
+| Backend | Node.js, Express, TypeScript |
+| Database | PostgreSQL |
+| SBOM generator | Syft |
+| Vulnerability scanner | Grype, nếu được cài đặt |
+| Source control | Git |
 
-## Cấu trúc Mã nguồn
+## Yêu Cầu Môi Trường
+
+- Node.js
+- PostgreSQL
+- Git
+- Syft
+- Grype, tùy chọn nếu cần scan vulnerability
+
+Kiểm tra nhanh:
+
+```bash
+git --version
+syft version
+node --version
+npm --version
+```
+
+## Cấu Trúc Dự Án
 
 ```text
 SBOM-Management/
-├── backend/                  # Lớp Trung tâm (Aggregator Server)
+├── backend/
 │   ├── src/
-│   │   ├── models/           # Schema PostgreSQL (Metadata, Component, Vulnerability...)
-│   │   ├── services/         # Logic Parser & Thuật toán Drift Analysis
-│   │   └── index.ts          # API Endpoints cho DevOps Integration
-├── frontend/                 # Lớp Hiển thị (Consumer Dashboard)
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── index.ts
+│   ├── sbom.sql
+│   └── package.json
+├── frontend/
 │   ├── src/
-│   │   ├── components/       # ComponentTable, DependencyTree, RiskCharts
-│   │   └── types/            # Strict Type definitions cho chuẩn SBOM
-├── .github/workflows/        # Cấu hình CI/CD tự động trích xuất SBOM
-├── docker-compose.yml        # Đóng gói và triển khai hệ thống
-└── README.md                 # Tài liệu mô tả dự án
+│   │   ├── components/
+│   │   ├── types/
+│   │   ├── api.ts
+│   │   └── App.tsx
+│   └── package.json
+└── README.md
 ```
 
-## Cài đặt & Khởi chạy
+## Cấu Hình Database
 
-**Khởi động môi trường (Docker):**
+Tạo database PostgreSQL, ví dụ:
+
+```sql
+CREATE DATABASE sbom_db;
+```
+
+Trong `backend/.env`, cấu hình:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_NAME=sbom_db
+PORT=5000
+```
+
+Backend có hàm tự tạo/migrate các bảng chính khi khởi động. Nếu muốn tạo schema thủ công, chạy file:
+
+```text
+backend/sbom.sql
+```
+
+Lưu ý nếu gặp lỗi PostgreSQL `no schema has been selected to create in`, chạy trước:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS public;
+SET search_path TO public;
+```
+
+## Cài Đặt Và Chạy
+
+Cài dependencies backend:
 
 ```bash
-docker-compose up -d
+cd backend
+npm install
 ```
 
-**Cài đặt thủ công (Nếu không dùng Docker):**
+Chạy backend:
 
-- **Backend:**
-  ```bash
-  cd backend && npm install && npm run dev
-  ```
-- **Frontend:**
-  ```bash
-  cd frontend && npm install && npm run dev
-  ```
+```bash
+npm run dev
+```
 
-_Lưu ý: Cấu hình tệp `.env` dựa trên `.env.example` để kết nối với cơ sở dữ liệu PostgreSQL._
+Backend mặc định chạy tại:
 
-## Tài liệu tham khảo
+```text
+http://localhost:5000
+```
 
-- SPDX (ISO/IEC 5962:2021)
-- CycloneDX v1.5 Specification
-- BOMs Away! A Comprehensive Study of Bills of Materials (ICSE 2024)
+Cài dependencies frontend:
 
----
+```bash
+cd frontend
+npm install
+```
 
-**Bản quyền:** Dự án phục vụ mục đích học thuật tại Đại học Bách khoa Hà Nội (HUST).
+Chạy frontend:
 
-**Liên hệ:**
+```bash
+npm run dev
+```
 
-- Sinh viên: Nguyễn Nhật Minh
-- Email: [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
-- GitHub: [Minh20235781](https://github.com/Minh20235781)
+Frontend mặc định chạy tại:
 
-## Incremental SBOM & Dependency Graph APIs
+```text
+http://localhost:5173
+```
 
-### Incremental SBOM generation
+## Kiểm Tra Build
 
-Backend now keeps versioned SBOM snapshots per `system.system_id` (used as `projectId`). The algorithm computes SHA-256 artifact fingerprints, normalizes component identity by `purl`, then `ecosystem + name + version`, then `name + version + hash`, compares the newest snapshot with the current SBOM, and writes `ADDED`, `UPDATED`, `REMOVED`, `UNCHANGED` change logs.
+Backend:
 
-New endpoints:
+```bash
+cd backend
+npm run build
+```
 
-- `POST /api/projects/:projectId/sbom/incremental-generate`
-- `GET /api/projects/:projectId/sbom/snapshots`
-- `GET /api/sbom/snapshots/:snapshotId/changes`
-- `GET /api/sbom/snapshots/:snapshotId/export`
+Frontend:
 
-Demo flow:
+```bash
+cd frontend
+npm run build
+```
 
-1. Upload a CycloneDX/SPDX SBOM and assign a system name.
-2. Open `Lich su phien ban`.
-3. Select the system and click `Generate Incremental SBOM`.
-4. Later, call the same endpoint with `{ "sbom": { ... } }` to create an incremental snapshot from changed SBOM data.
-
-### Dependency graph layout
-
-The graph API builds a directed graph from `sbom_dependencies`, adds a project root node, computes depth with BFS, detects cycle edges, and assigns layered coordinates with risk-first sorting.
-
-New endpoint:
-
-- `GET /api/sbom/snapshots/:snapshotId/graph?depth=1&onlyVulnerable=false&search=react`
-
-The frontend component `SbomDependencyGraph.tsx` renders an SVG graph canvas with search, max depth, vulnerable-only filter, legend, and a node detail side panel.
-
-### Algorithm sample tests
+Chạy test thuật toán mẫu:
 
 ```bash
 cd backend
 npm test
 ```
 
-The sample test covers initial generation, added dependency, version change, removed dependency, multi-level graph data, cycle input, and vulnerability risk mapping.
+## Demo Trang Kiểm Chứng SBOM
 
-## Auto-Generated Incremental SBOM
+Flow chính:
 
-The auto-generated flow uses the current project state as the source of truth. Old SBOM snapshots are only references for comparison.
+1. Mở trang `Kiểm chứng SBOM`.
+2. Chọn một repository web thật trong danh sách.
+3. Tải file SBOM CycloneDX JSON tương ứng từ máy lên, ví dụ file đã generate trước đó.
+4. Bấm `Analyze Source`.
+   - Backend clone hoặc update repository thật.
+   - Phát hiện dependency files.
+   - Chạy Syft để phân tích source.
+   - Dựng metadata, component, dependency và graph.
+5. Bấm `Verify SBOM`.
+   - Backend phân tích lại source thật.
+   - So sánh source components với SBOM upload.
+   - Trả về matched, missing, extra, version mismatch và Trust Score.
+6. Xem `Báo cáo kiểm chứng` và `Báo cáo kiểm thử`.
 
-Supported project-state inputs:
+Demo phát hiện lỗi:
 
-- `package.json`
-- `package-lock.json`
-- `requirements.txt`
-- `pom.xml`
-- `build.gradle`
-- `Dockerfile`
+1. Sau khi upload SBOM, dùng các thao tác trong card `SBOM tải lên từ máy`:
+   - `Xóa khỏi SBOM`
+   - `Sửa version`
+   - `Thêm vào SBOM`
+2. Bấm `Verify SBOM` để kiểm chứng bản SBOM đã chỉnh.
+3. Hoặc bấm `Create Faulty SBOM Demo` để hệ thống tự tạo bản lỗi gồm:
+   - Xóa một component thật.
+   - Thêm `fake-lib-demo@9.9.9`.
+   - Sửa version một component thật.
+4. Bấm `Verify Faulty SBOM`.
+5. Kiểm tra báo cáo có `MISSING_IN_SBOM`, `EXTRA_IN_SBOM`, `VERSION_MISMATCH` và Trust Score giảm.
 
-New artifact APIs:
+Trust Score được tính theo công thức:
 
-- `POST /api/projects/:projectId/artifacts`
-- `GET /api/projects/:projectId/artifacts`
-- `POST /api/projects/:projectId/sbom/auto-generate`
-
-Example CI/CD payload:
-
-```json
-{
-  "dependencyFiles": [
-    {
-      "artifactPath": "package.json",
-      "content": "{\"dependencies\":{\"react\":\"^18.0.0\",\"axios\":\"^1.6.0\"}}"
-    },
-    {
-      "artifactPath": "package-lock.json",
-      "content": "{...}"
-    }
-  ]
-}
+```text
+matchedExactCount / (sourceComponentCount + extraInSbomCount) * 100
 ```
 
-Backend stores these files in `project_artifacts`, computes SHA-256 fingerprints, extracts dependencies, compares against the latest snapshot, and creates a new snapshot only when artifact fingerprints changed.
+Phân loại:
 
-Demo:
+- High trust: 90-100%
+- Medium: 70-89%
+- Low: 50-69%
+- Untrusted: dưới 50%
 
-1. Open `Lich su phien ban`.
-2. Select a system/project.
-3. Upload `package.json` and optional lockfile with `Upload dependency files`.
-4. Snapshot v1 is created from current project dependencies.
-5. Edit `package.json` to add/remove dependencies.
-6. Upload the changed file again.
-7. Snapshot v2 shows `ADDED`, `REMOVED`, `UNCHANGED`, and the graph updates from the new project state.
+## Demo Trang Upload Repository GitHub
+
+Flow:
+
+1. Nhập GitHub Repository URL.
+2. Bấm `Phân tích SBOM`.
+3. Xem kết quả phân tích và metadata do công cụ suy luận:
+   - Tác giả
+   - Dịch vụ
+   - Giai đoạn vòng đời DevOps
+4. Bấm `Confirm Analysis`.
+5. Bấm `Generate SBOM`.
+6. Tải file SBOM CycloneDX JSON về máy để lưu lại.
+7. Sau một thời gian, có thể dùng lại chính file này ở trang `Kiểm chứng SBOM` để so sánh với source repository hiện tại.
+
+## Demo Trang Pipeline
+
+Flow:
+
+1. Chọn project.
+2. Tạo task phát triển nếu cần.
+3. Tạo pipeline:
+   - Nhập pipeline name.
+   - Nhập branch.
+   - Chọn provider.
+   - Chọn trigger.
+   - Nhập GitHub Repo URL.
+4. Chọn pipeline vừa tạo.
+5. Bấm `Run Pipeline`.
+6. Xem pipeline runs, snapshot, change log và dependency graph.
+
+## API Chính
+
+SBOM:
+
+- `POST /api/sboms/upload`
+- `POST /api/sboms/analyze-repo`
+- `POST /api/sboms/generate`
+- `GET /api/sboms`
+- `GET /api/sboms/:id/components`
+- `GET /api/sboms/:id/dependencies`
+
+Validation scenarios:
+
+- `GET /api/validation-scenarios`
+- `POST /api/validation-scenarios/:scenarioId/analyze`
+- `POST /api/validation-scenarios/runs/:runId/confirm`
+- `POST /api/validation-scenarios/runs/:runId/generate`
+- `POST /api/validation-scenarios/runs/:runId/faulty`
+- `POST /api/validation-scenarios/runs/:runId/verify`
+- `POST /api/validation-scenarios/runs/:runId/verify-uploaded`
+- `GET /api/validation-scenarios/runs/:runId/report`
+
+Incremental SBOM:
+
+- `POST /api/projects/:projectId/sbom/incremental-generate`
+- `POST /api/projects/:projectId/sbom/auto-generate`
+- `GET /api/projects/:projectId/sbom/snapshots`
+- `GET /api/sbom/snapshots/:snapshotId/changes`
+- `GET /api/sbom/snapshots/:snapshotId/graph`
+- `GET /api/sbom/snapshots/:snapshotId/export`
+
+Pipeline:
+
+- `GET /api/projects/:projectId/tasks`
+- `POST /api/projects/:projectId/tasks`
+- `GET /api/projects/:projectId/pipelines`
+- `POST /api/projects/:projectId/pipelines`
+- `POST /api/pipelines/:pipelineId/run`
+- `GET /api/pipelines/:pipelineId/runs`
+- `GET /api/pipeline-runs/:runId`
+
+## Repository Web Dùng Cho Demo
+
+Trang kiểm chứng làm việc với repository GitHub thật đã có trong hệ thống. Các ví dụ phù hợp phạm vi Web Application + Single Repository:
+
+- Spring PetClinic
+- Ghost CMS
+- NodeBB
+- BookStack
+- Discourse
+- Gitea
+- Flasky
+- RealWorld React
+- RealWorld Vue
+- OWASP Juice Shop
+
+## Lưu Ý Và Hạn Chế
+
+- Không fake số liệu phân tích. Component count, dependency count và graph phụ thuộc kết quả Syft chạy thực tế.
+- Nếu Git clone hoặc Syft thất bại, UI sẽ hiển thị lỗi tương ứng.
+- Phiên bản hiện tại chưa hỗ trợ kiểm chứng multi-repo như một hệ thống microservice nhiều repository.
+- File SBOM upload nên là CycloneDX JSON có trường `components`.
+- Kết quả dependency graph phụ thuộc dữ liệu `dependencies` có trong SBOM.
+
+## Tài Liệu Tham Khảo
+
+- CycloneDX Specification
+- SPDX Specification
+- Syft Documentation
+- Grype Documentation
+- OWASP Software Component Verification Standard
+
+## Liên Hệ
+
+- Sinh viên: Nguyễn Nhật Minh
+- Email: [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
+- GitHub: [Minh20235781](https://github.com/Minh20235781)
