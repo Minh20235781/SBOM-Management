@@ -48,7 +48,7 @@ const generateSbomFromGitHubRepo = async (repoUrl) => {
     try {
         await promises_1.default.mkdir(tempRoot, { recursive: true });
         const gitBin = process.env.GIT_BIN || 'git';
-        await execFilePromise(gitBin, ['clone', '--depth', '1', normalizedRepoUrl, repoPath], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
+        await execFilePromise(gitBin, ['-c', 'core.longpaths=true', 'clone', '--depth', '1', normalizedRepoUrl, repoPath], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
         const syftBin = process.env.SYFT_BIN || 'syft';
         const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
         const sbom = JSON.parse(stdout);

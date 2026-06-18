@@ -117,10 +117,10 @@ SBOM-Management/
 
 ## Cấu Hình Database
 
-Tạo database PostgreSQL, ví dụ:
+Tạo database PostgreSQL:
 
 ```sql
-CREATE DATABASE sbom_db;
+CREATE DATABASE SBOM;
 ```
 
 Trong `backend/.env`, cấu hình:
@@ -130,7 +130,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=your_password
-DB_NAME=sbom_db
+DB_NAME=SBOM
 PORT=5000
 ```
 

@@ -253,6 +253,17 @@ const downloadJson = (fileName: string, value: unknown) => {
   URL.revokeObjectURL(url);
 };
 
+const formatUiError = (value: string) => {
+  const normalized = value.replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (/Filename too long|unable to create file|checkout failed/i.test(normalized)) {
+    return [
+      'Git da clone repository nhung checkout that bai vi duong dan file qua dai tren Windows.',
+      'Ung dung da bat core.longpaths cho cac lan clone tiep theo. Neu van gap loi, hay bat long paths trong Windows hoac chon repository co path ngan hon.',
+    ].join('\n');
+  }
+  return normalized.length > 1200 ? `${normalized.slice(0, 1200)}\n...` : normalized;
+};
+
 const componentKey = (component: any, index: number) =>
   String(component?.['bom-ref'] || component?.purl || `${component?.name || 'unknown'}@${component?.version || 'unknown'}#${index}`);
 
@@ -337,11 +348,16 @@ const MiniGraph: React.FC<{ graph: Graph | null }> = ({ graph }) => {
           if (!position) return null;
           return (
             <g key={node.id} transform={`translate(${position.x}, ${position.y - 28})`}>
-              <rect width={168} height={56} rx={8} fill={node.type === 'PROJECT' ? '#0f172a' : '#ffffff'} stroke="#cbd5e1" />
-              <text x={12} y={22} className={node.type === 'PROJECT' ? 'fill-white text-xs font-semibold' : 'fill-slate-800 text-xs font-semibold'}>
+              <rect
+                width={168}
+                height={56}
+                rx={8}
+                className={node.type === 'PROJECT' ? 'fill-slate-900 stroke-slate-900 dark:fill-slate-950 dark:stroke-slate-600' : 'fill-white stroke-slate-300 dark:fill-slate-900 dark:stroke-slate-700'}
+              />
+              <text x={12} y={22} className={node.type === 'PROJECT' ? 'fill-white text-xs font-semibold' : 'fill-slate-800 text-xs font-semibold dark:fill-slate-100'}>
                 {node.label.length > 22 ? `${node.label.slice(0, 21)}...` : node.label}
               </text>
-              <text x={12} y={42} className={node.type === 'PROJECT' ? 'fill-slate-300 text-[10px]' : 'fill-slate-500 text-[10px]'}>
+              <text x={12} y={42} className={node.type === 'PROJECT' ? 'fill-slate-300 text-[10px]' : 'fill-slate-500 text-[10px] dark:fill-slate-400'}>
                 {node.ecosystem}
               </text>
             </g>
@@ -433,7 +449,7 @@ const SbomValidationScenarios: React.FC = () => {
     try {
       await fn();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Thao tác thất bại.');
+      setError(formatUiError(error instanceof Error ? error.message : 'Thao tác thất bại.'));
     } finally {
       setLoadingAction(null);
     }
@@ -734,10 +750,10 @@ const SbomValidationScenarios: React.FC = () => {
       </header>
 
       {error && (
-        <div className="flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2">
+        <div className="flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="leading-5">{error}</p>
+            <p className="max-h-48 min-w-0 overflow-auto whitespace-pre-wrap break-words leading-5">{error}</p>
           </div>
           <button
             type="button"

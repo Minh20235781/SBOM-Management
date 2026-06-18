@@ -60,7 +60,7 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
     const gitBin = process.env.GIT_BIN || 'git';
     await execFilePromise(
       gitBin,
-      ['clone', '--depth', '1', normalizedRepoUrl, repoPath],
+      ['-c', 'core.longpaths=true', 'clone', '--depth', '1', normalizedRepoUrl, repoPath],
       { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }
     );
 

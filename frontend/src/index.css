@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -62,6 +64,140 @@
 
 body {
   margin: 0;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+.dark .bg-white {
+  background-color: rgb(15 23 42);
+}
+
+.dark .bg-white\/95 {
+  background-color: rgb(15 23 42 / 0.95);
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-slate-50\/70,
+.dark .bg-slate-50\/80 {
+  background-color: rgb(30 41 59 / 0.72);
+}
+
+.dark .bg-blue-50,
+.dark .bg-blue-50\/40,
+.dark .bg-blue-50\/50,
+.dark .bg-blue-50\/60 {
+  background-color: rgb(30 58 138 / 0.28);
+}
+
+.dark .bg-amber-50,
+.dark .bg-amber-50\/50,
+.dark .bg-amber-50\/60 {
+  background-color: rgb(120 53 15 / 0.32);
+}
+
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/50,
+.dark .bg-emerald-50\/60 {
+  background-color: rgb(6 78 59 / 0.32);
+}
+
+.dark .bg-rose-50,
+.dark .bg-rose-50\/50,
+.dark .bg-rose-50\/60 {
+  background-color: rgb(136 19 55 / 0.32);
+}
+
+.dark .border-slate-200,
+.dark .border-slate-100 {
+  border-color: rgb(51 65 85);
+}
+
+.dark .border-white\/80,
+.dark .border-blue-100,
+.dark .border-blue-200,
+.dark .border-amber-100,
+.dark .border-amber-200,
+.dark .border-emerald-100,
+.dark .border-rose-100,
+.dark .border-rose-200 {
+  border-color: rgb(51 65 85);
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: rgb(241 245 249);
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: rgb(148 163 184);
+}
+
+.dark .text-blue-700,
+.dark .text-blue-600 {
+  color: rgb(147 197 253);
+}
+
+.dark .text-amber-900,
+.dark .text-amber-800,
+.dark .text-amber-700 {
+  color: rgb(252 211 77);
+}
+
+.dark .text-emerald-700,
+.dark .text-emerald-600 {
+  color: rgb(110 231 183);
+}
+
+.dark .text-rose-900,
+.dark .text-rose-800,
+.dark .text-rose-700 {
+  color: rgb(253 164 175);
+}
+
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-50\/50:hover {
+  background-color: rgb(51 65 85 / 0.72);
+}
+
+.dark .hover\:bg-blue-50:hover,
+.dark .hover\:bg-blue-100:hover {
+  background-color: rgb(30 64 175 / 0.42);
+}
+
+.dark .hover\:bg-amber-100:hover {
+  background-color: rgb(146 64 14 / 0.42);
+}
+
+.dark .hover\:bg-rose-50:hover {
+  background-color: rgb(136 19 55 / 0.42);
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: rgb(15 23 42);
+  border-color: rgb(51 65 85);
+  color: rgb(241 245 249);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(100 116 139);
+}
+
+.dark .from-slate-50 {
+  --tw-gradient-from: rgb(30 41 59 / 0.85);
+  --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+}
+
+.dark .to-white {
+  --tw-gradient-to: rgb(15 23 42);
 }
 
 html,

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Download,
@@ -13,6 +13,8 @@ import { API_BASE } from '../api';
 
 interface Props {
   onUploadSuccess: (data: Record<string, unknown>) => void | Promise<void>;
+  session: SBOMUploadSession;
+  onSessionChange: (session: SBOMUploadSession) => void;
 }
 
 type RepoAnalysis = {
@@ -46,21 +48,48 @@ type InferredMetadata = {
   lifecyclePhase: InferredField;
 };
 
-const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [systemName, setSystemName] = useState('');
+export type SBOMUploadSession = {
+  fileName: string | null;
+  systemName: string;
+  saveMsg: string | null;
+  pendingSbom: Record<string, unknown> | null;
+  mode: 'file' | 'github';
+  repoUrl: string;
+  repoAnalysis: RepoAnalysis | null;
+  repoConfirmed: boolean;
+  generatedRepoSbom: boolean;
+};
+
+export const createDefaultSBOMUploadSession = (): SBOMUploadSession => ({
+  fileName: null,
+  systemName: '',
+  saveMsg: null,
+  pendingSbom: null,
+  mode: 'file',
+  repoUrl: '',
+  repoAnalysis: null,
+  repoConfirmed: false,
+  generatedRepoSbom: false,
+});
+
+const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange }) => {
+  const { fileName, systemName, saveMsg, pendingSbom, mode, repoUrl, repoAnalysis, repoConfirmed, generatedRepoSbom } = session;
   const [savingSystem, setSavingSystem] = useState(false);
   const [analyzingRepo, setAnalyzingRepo] = useState(false);
   const [generatingRepo, setGeneratingRepo] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [pendingSbom, setPendingSbom] = useState<Record<string, unknown> | null>(null);
-  const [mode, setMode] = useState<'file' | 'github'>('file');
-  const [repoUrl, setRepoUrl] = useState('');
-  const [repoAnalysis, setRepoAnalysis] = useState<RepoAnalysis | null>(null);
-  const [repoConfirmed, setRepoConfirmed] = useState(false);
-  const [generatedRepoSbom, setGeneratedRepoSbom] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sessionRef = useRef(session);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  const updateSession = (patch: Partial<SBOMUploadSession>) => {
+    const nextSession = { ...sessionRef.current, ...patch };
+    sessionRef.current = nextSession;
+    onSessionChange(nextSession);
+  };
 
   const formatBytes = (bytes?: number) => {
     if (!bytes) return '0 B';
@@ -90,13 +119,13 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setFileName(file.name);
+    updateSession({ fileName: file.name });
     const reader = new FileReader();
 
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        setPendingSbom(json);
+        updateSession({ pendingSbom: json });
         onUploadSuccess({
           sbom: json,
           systemName: systemName.trim() || undefined,
@@ -115,12 +144,12 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
   const saveSystem = async () => {
     const name = systemName.trim();
     if (!name) {
-      setSaveMsg('Vui lòng nhập tên hệ thống');
+      updateSession({ saveMsg: 'Vui lòng nhập tên hệ thống' });
       return;
     }
 
     setSavingSystem(true);
-    setSaveMsg(null);
+    updateSession({ saveMsg: null });
     try {
       const res = await fetch(`${API_BASE}/systems`, {
         method: 'POST',
@@ -140,12 +169,12 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
 
       if (pendingSbom) {
         await Promise.resolve(onUploadSuccess({ sbom: pendingSbom, systemName: name }));
-        setSaveMsg('Đã lưu hệ thống và liên kết SBOM');
+        updateSession({ saveMsg: 'Đã lưu hệ thống và liên kết SBOM' });
       } else {
-        setSaveMsg('Đã lưu hệ thống');
+        updateSession({ saveMsg: 'Đã lưu hệ thống' });
       }
     } catch (err: unknown) {
-      setSaveMsg(err instanceof Error ? err.message : 'Lưu thất bại');
+      updateSession({ saveMsg: err instanceof Error ? err.message : 'Lưu thất bại' });
     } finally {
       setSavingSystem(false);
     }
@@ -154,15 +183,12 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
   const analyzeFromRepo = async () => {
     const trimmedRepoUrl = repoUrl.trim();
     if (!trimmedRepoUrl) {
-      setSaveMsg('Vui lòng nhập URL repository GitHub');
+      updateSession({ saveMsg: 'Vui lòng nhập URL repository GitHub' });
       return;
     }
 
     setAnalyzingRepo(true);
-    setSaveMsg(null);
-    setRepoAnalysis(null);
-    setRepoConfirmed(false);
-    setGeneratedRepoSbom(false);
+    updateSession({ saveMsg: null, repoAnalysis: null, repoConfirmed: false, generatedRepoSbom: false });
     try {
       const res = await fetch(`${API_BASE}/sboms/analyze-repo`, {
         method: 'POST',
@@ -173,11 +199,13 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
       const json = raw ? JSON.parse(raw) : {};
       if (!res.ok) throw new Error(json.error || json.message || raw || 'Phân tích SBOM thất bại');
 
-      setPendingSbom(json.sbom);
-      setRepoAnalysis(json.analysis);
-      setSaveMsg('Đã phân tích repository. Vui lòng kiểm tra thông tin rồi xác nhận để sinh SBOM.');
+      updateSession({
+        pendingSbom: json.sbom,
+        repoAnalysis: json.analysis,
+        saveMsg: 'Đã phân tích repository. Vui lòng kiểm tra thông tin rồi xác nhận để sinh SBOM.',
+      });
     } catch (err: unknown) {
-      setSaveMsg(err instanceof Error ? err.message : 'Phân tích SBOM thất bại');
+      updateSession({ saveMsg: err instanceof Error ? err.message : 'Phân tích SBOM thất bại' });
     } finally {
       setAnalyzingRepo(false);
     }
@@ -185,29 +213,28 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
 
   const confirmRepoAnalysis = () => {
     if (!repoAnalysis) return;
-    setRepoConfirmed(true);
-    setSaveMsg('Đã xác nhận kết quả phân tích. Bạn có thể sinh và tải SBOM.');
+    updateSession({ repoConfirmed: true, saveMsg: 'Đã xác nhận kết quả phân tích. Bạn có thể sinh và tải SBOM.' });
   };
 
   const generateConfirmedRepoSbom = async () => {
     if (!pendingSbom || !repoAnalysis || !repoConfirmed) {
-      setSaveMsg('Vui lòng phân tích và xác nhận trước khi sinh SBOM');
+      updateSession({ saveMsg: 'Vui lòng phân tích và xác nhận trước khi sinh SBOM' });
       return;
     }
 
     setGeneratingRepo(true);
-    setSaveMsg(null);
+    updateSession({ saveMsg: null });
     try {
       await Promise.resolve(onUploadSuccess({
         sbom: pendingSbom,
         systemName: systemName.trim() || repoAnalysis.repoName,
         repoUrl: repoAnalysis.repoUrl,
       }));
-      setGeneratedRepoSbom(true);
+      updateSession({ generatedRepoSbom: true });
       downloadSbom();
-      setSaveMsg('Đã sinh, lưu và tải file SBOM về máy.');
+      updateSession({ saveMsg: 'Đã sinh, lưu và tải file SBOM về máy.' });
     } catch (err: unknown) {
-      setSaveMsg(err instanceof Error ? err.message : 'Sinh SBOM thất bại');
+      updateSession({ saveMsg: err instanceof Error ? err.message : 'Sinh SBOM thất bại' });
     } finally {
       setGeneratingRepo(false);
     }
@@ -227,7 +254,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
         <div className="grid w-full grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-medium">
           <button
             type="button"
-            onClick={() => setMode('file')}
+            onClick={() => updateSession({ mode: 'file' })}
             className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 transition ${mode === 'file' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Upload className="h-4 w-4" />
@@ -235,7 +262,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
           </button>
           <button
             type="button"
-            onClick={() => setMode('github')}
+            onClick={() => updateSession({ mode: 'github' })}
             className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 transition ${mode === 'github' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <GitBranch className="h-4 w-4" />
@@ -281,7 +308,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
               <label className="text-xs text-slate-500">URL repository GitHub</label>
               <input
                 value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
+                onChange={(e) => updateSession({ repoUrl: e.target.value })}
                 placeholder="https://github.com/owner/repo"
                 className="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
               />
@@ -336,7 +363,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess }) => {
           <label className="text-xs text-slate-500">Tên hệ thống</label>
           <input
             value={systemName}
-            onChange={(e) => setSystemName(e.target.value)}
+            onChange={(e) => updateSession({ systemName: e.target.value })}
             placeholder={mode === 'github' ? 'Mặc định là tên repository' : 'Tên hệ thống cần lưu'}
             className="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
           />

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
 import Systems from './components/Systems';
-import SBOMUpload from './components/SBOMUpload';
+import SBOMUpload, { createDefaultSBOMUploadSession, type SBOMUploadSession } from './components/SBOMUpload';
 import ComponentTable from './components/ComponentTable';
 import SbomParsedDependencyGraph from './components/SbomParsedDependencyGraph';
 import Dashboard from './components/Dashboard';
@@ -15,7 +15,7 @@ import {
   Search, Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
   GitMerge, Server, Layers, UploadCloud, Info,
-  PanelLeftClose, PanelLeftOpen, TestTube2
+  PanelLeftClose, PanelLeftOpen, TestTube2, Moon, Sun
 } from 'lucide-react';
 
 function App() {
@@ -26,6 +26,8 @@ function App() {
   const [systems, setSystems] = useState<any[]>([]);
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('sbom-theme') === 'dark');
+  const [sbomUploadSession, setSbomUploadSession] = useState<SBOMUploadSession>(() => createDefaultSBOMUploadSession());
   const [selectedSystemDetail, setSelectedSystemDetail] = useState<any | null>(null);
 
   const formatMetadataValue = (value?: string | null) => {
@@ -33,6 +35,23 @@ function App() {
     const normalized = value.trim();
     return normalized && normalized.toUpperCase() !== 'N/A' ? normalized : '-';
   };
+
+  const sidebarItemClass = (active: boolean) =>
+    `w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+      active
+        ? 'text-blue-700 bg-blue-50/80 dark:bg-blue-950/50 dark:text-blue-200'
+        : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+    }`;
+
+  const sidebarSplitItemClass = (active: boolean) =>
+    `w-full flex justify-between items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+      active
+        ? 'text-blue-700 bg-blue-50/80 dark:bg-blue-950/50 dark:text-blue-200'
+        : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+    }`;
+
+  const sidebarIconClass = (active: boolean, inactiveClass = 'text-slate-400') =>
+    `w-4 h-4 ${active ? 'text-blue-600 dark:text-blue-300' : `${inactiveClass} dark:text-slate-500`}`;
 
   const loadGeneratedSbomData = async (sbomId: string) => {
     const metaRes = await fetch(`${API_BASE}/sboms/${sbomId}`);
@@ -200,17 +219,22 @@ function App() {
   // Load systems on mount
   useEffect(() => { fetchSystems(); }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('sbom-theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div className={`flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden dark:bg-slate-950 dark:text-slate-100 ${darkMode ? 'dark' : ''}`}>
       {/* Sidebar */}
-      {!sidebarCollapsed && <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-slate-200 shrink-0">
+      {!sidebarCollapsed && <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0 dark:bg-slate-900 dark:border-slate-800">
+        <div className="h-16 flex items-center px-6 border-b border-slate-200 shrink-0 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="bg-blue-600 p-1.5 rounded-lg shadow-sm shadow-blue-200">
               <LayoutDashboard className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-sm leading-tight text-slate-800">SBOM Management</h1>
+              <h1 className="font-bold text-sm leading-tight text-slate-800 dark:text-slate-100">SBOM Management</h1>
               <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold mt-0.5">Enterprise Platform</p>
             </div>
           </div>
@@ -223,15 +247,15 @@ function App() {
             <nav className="space-y-1">
               <button 
                 onClick={() => setActiveMenu('dashboard')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'dashboard' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'dashboard')}
               >
-                <LayoutDashboard className={`w-4 h-4 ${activeMenu === 'dashboard' ? 'text-blue-600' : 'text-slate-400'}`} /> Dashboard
+                <LayoutDashboard className={sidebarIconClass(activeMenu === 'dashboard')} /> Dashboard
               </button>
               <button 
                 onClick={() => setActiveMenu('system')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'system' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'system')}
               >
-                <Server className={`w-4 h-4 ${activeMenu === 'system' ? 'text-blue-600' : 'text-slate-400'}`} /> Hệ thống
+                <Server className={sidebarIconClass(activeMenu === 'system')} /> Hệ thống
               </button>
             </nav>
           </div>
@@ -242,33 +266,33 @@ function App() {
             <nav className="space-y-1">
               <button 
                 onClick={() => setActiveMenu('upload')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'upload' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'upload')}
               >
-                <UploadCloud className={`w-4 h-4 ${activeMenu === 'upload' ? 'text-blue-600' : 'text-slate-400'}`} /> Tải lên
+                <UploadCloud className={sidebarIconClass(activeMenu === 'upload')} /> Tải lên
               </button>
               <button 
                 onClick={() => setActiveMenu('components')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'components' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'components')}
               >
-                <Layers className={`w-4 h-4 ${activeMenu === 'components' ? 'text-blue-600' : 'text-slate-400'}`} /> Thành phần
+                <Layers className={sidebarIconClass(activeMenu === 'components')} /> Thành phần
               </button>
               <button 
                 onClick={() => setActiveMenu('dependencies')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'dependencies' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'dependencies')}
               >
-                <ListTree className={`w-4 h-4 ${activeMenu === 'dependencies' ? 'text-blue-600' : 'text-slate-400'}`} /> Phụ thuộc
+                <ListTree className={sidebarIconClass(activeMenu === 'dependencies')} /> Phụ thuộc
               </button>
               <button 
                 onClick={() => setActiveMenu('validation-scenarios')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'validation-scenarios' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'validation-scenarios')}
               >
-                <TestTube2 className={`w-4 h-4 ${activeMenu === 'validation-scenarios' ? 'text-blue-600' : 'text-slate-400'}`} /> Kiểm chứng
+                <TestTube2 className={sidebarIconClass(activeMenu === 'validation-scenarios')} /> Kiểm chứng
               </button>
               <button 
                 onClick={() => setActiveMenu('history')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'history' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'history')}
               >
-                <History className={`w-4 h-4 ${activeMenu === 'history' ? 'text-blue-600' : 'text-slate-400'}`} /> Lịch sử phiên bản
+                <History className={sidebarIconClass(activeMenu === 'history')} /> Lịch sử phiên bản
               </button>
             </nav>
           </div>
@@ -279,10 +303,10 @@ function App() {
             <nav className="space-y-1">
               <button 
                 onClick={() => setActiveMenu('cve')}
-                className={`w-full flex justify-between items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'cve' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarSplitItemClass(activeMenu === 'cve')}
               >
                 <div className="flex items-center gap-3">
-                  <ShieldAlert className={`w-4 h-4 ${activeMenu === 'cve' ? 'text-blue-600' : 'text-red-400'}`} /> Lỗ hổng (CVE)
+                  <ShieldAlert className={sidebarIconClass(activeMenu === 'cve', 'text-red-400')} /> Lỗ hổng (CVE)
                 </div>
                 {vulnerabilities.length > 0 && (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">{vulnerabilities.length}</span>
@@ -290,15 +314,15 @@ function App() {
               </button>
               <button 
                 onClick={() => setActiveMenu('compliance')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'compliance' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'compliance')}
               >
-                <ShieldCheck className={`w-4 h-4 ${activeMenu === 'compliance' ? 'text-blue-600' : 'text-slate-400'}`} /> Tuân thủ
+                <ShieldCheck className={sidebarIconClass(activeMenu === 'compliance')} /> Tuân thủ
               </button>
               <button 
                 onClick={() => setActiveMenu('audit')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'audit' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'audit')}
               >
-                <FileKey className={`w-4 h-4 ${activeMenu === 'audit' ? 'text-blue-600' : 'text-slate-400'}`} /> Kiểm toán
+                <FileKey className={sidebarIconClass(activeMenu === 'audit')} /> Kiểm toán
               </button>
             </nav>
           </div>
@@ -309,15 +333,15 @@ function App() {
             <nav className="space-y-1">
               <button 
                 onClick={() => setActiveMenu('pipeline')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'pipeline' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'pipeline')}
               >
-                <GitMerge className={`w-4 h-4 ${activeMenu === 'pipeline' ? 'text-blue-600' : 'text-slate-400'}`} /> Pipeline
+                <GitMerge className={sidebarIconClass(activeMenu === 'pipeline')} /> Pipeline
               </button>
               <button 
                 onClick={() => setActiveMenu('monitoring')}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeMenu === 'monitoring' ? 'text-blue-700 bg-blue-50/80' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={sidebarItemClass(activeMenu === 'monitoring')}
               >
-                <Activity className={`w-4 h-4 ${activeMenu === 'monitoring' ? 'text-blue-600' : 'text-slate-400'}`} /> Giám sát
+                <Activity className={sidebarIconClass(activeMenu === 'monitoring')} /> Giám sát
               </button>
             </nav>
           </div>
@@ -327,12 +351,12 @@ function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Navbar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 dark:bg-slate-900 dark:border-slate-800">
           <button
             type="button"
             onClick={() => setSidebarCollapsed(value => !value)}
             title={sidebarCollapsed ? 'Mo sidebar' : 'An sidebar'}
-            className="hidden md:inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition mr-3"
+            className="hidden md:inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition mr-3 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
           >
             {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
@@ -341,10 +365,18 @@ function App() {
             <input 
               type="text" 
               placeholder="Tìm kiếm hệ thống, CVE, pipeline..." 
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-10 pr-4 text-sm focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all placeholder:text-slate-400" 
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-10 pr-4 text-sm focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 dark:focus:ring-blue-900/50" 
             />
           </div>
           <div className="flex items-center gap-6">
+            <button
+              type="button"
+              onClick={() => setDarkMode(value => !value)}
+              title={darkMode ? 'Chuyen sang giao dien sang' : 'Chuyen sang giao dien toi'}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -352,7 +384,7 @@ function App() {
               </span>
               Live
             </div>
-            <div className="flex items-center gap-3 py-2 border-l border-slate-200 pl-6">
+            <div className="flex items-center gap-3 py-2 border-l border-slate-200 pl-6 dark:border-slate-700">
               <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm shadow-sm opacity-90">
                 NM
               </div>
@@ -365,7 +397,7 @@ function App() {
         </header>
 
         {/* Content Scrollable area */}
-        <div className="flex-1 overflow-auto bg-[#fafafa] p-8">
+        <div className="flex-1 overflow-auto bg-[#fafafa] p-8 dark:bg-slate-950">
           
           <div className={`${activeMenu === 'history' || activeMenu === 'pipeline' ? 'max-w-none' : 'max-w-7xl'} mx-auto space-y-6`}>
 
@@ -375,26 +407,28 @@ function App() {
               <>
                 {/* Khối 1: Tải lên SBOM & Thống kê */}
                 <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-                  <div className="flex-1 w-full max-w-xl">
+                  <div className="w-full">
                     <h3 className="font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 text-sm">
                       <Database className="w-4 h-4 text-blue-500" /> Tải lên SBOM
                     </h3>
-                    <SBOMUpload onUploadSuccess={handleUploadSuccess} />
+                    <SBOMUpload
+                      onUploadSuccess={handleUploadSuccess}
+                      session={sbomUploadSession}
+                      onSessionChange={setSbomUploadSession}
+                    />
                   </div>
                   
-                  <div className="flex gap-4 shrink-0 mt-4 lg:mt-0">
-                    <div className="px-6 py-4 bg-blue-50/50 rounded-xl border border-blue-100 shadow-sm text-center min-w-[130px]">
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="px-6 py-4 bg-blue-50/50 rounded-xl border border-blue-100 shadow-sm text-center">
                       <p className="text-xs font-bold uppercase text-slate-500 mb-1 tracking-wider">Thành phần</p>
                       <p className="text-3xl font-bold text-blue-600">{components.length}</p>
                     </div>
-                    <div className="px-6 py-4 bg-amber-50/50 rounded-xl border border-amber-100 shadow-sm text-center min-w-[130px]">
+                    <div className="px-6 py-4 bg-amber-50/50 rounded-xl border border-amber-100 shadow-sm text-center">
                       <p className="text-xs font-bold uppercase text-slate-500 mb-1 tracking-wider">Lỗ hổng (CVE)</p>
                       <p className="text-3xl font-bold text-amber-500">{vulnerabilities.length}</p>
                     </div>
                   </div>
                 </div>
-            </div>
 
             {/* Khối Metadata (Thông tin cơ bản) */}
             {metadata && (
@@ -413,11 +447,11 @@ function App() {
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Thời gian tạo</p>
                     <p className="text-sm font-medium text-slate-800">{new Date(metadata.created_timestamp).toLocaleString('vi-VN')}</p>
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Tác giả</p>
                     <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.authors)}</p>
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <p className="text-xs font-bold uppercase text-slate-500 tracking-wider mb-1">Công cụ tạo (Tools)</p>
                     <p className="text-sm font-medium text-slate-800">{formatMetadataValue(metadata.tool_components)}</p>
                   </div>

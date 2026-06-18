@@ -48,7 +48,24 @@ const normalizeStatus = (value, fallback) => {
 };
 exports.cicdService = {
     listTasks: async (client, projectId) => {
-        const { rows } = await client.query('SELECT * FROM dev_tasks WHERE project_id = $1 ORDER BY created_at DESC, task_id DESC', [projectId]);
+        const { rows } = await client.query(`SELECT t.*,
+        p.name AS related_pipeline_name,
+        latest.run_id AS latest_run_id,
+        latest.status AS latest_run_status,
+        latest.generated_sbom_snapshot_id AS latest_snapshot_id,
+        s.version_number AS latest_snapshot_version
+       FROM dev_tasks t
+       LEFT JOIN cicd_pipelines p ON p.pipeline_id = t.related_pipeline_id
+       LEFT JOIN LATERAL (
+         SELECT run_id, status, generated_sbom_snapshot_id
+         FROM cicd_pipeline_runs r
+         WHERE r.pipeline_id = t.related_pipeline_id
+         ORDER BY r.run_number DESC
+         LIMIT 1
+       ) latest ON true
+       LEFT JOIN sbom_snapshots s ON s.snapshot_id = latest.generated_sbom_snapshot_id
+       WHERE t.project_id = $1
+       ORDER BY t.created_at DESC, t.task_id DESC`, [projectId]);
         return rows;
     },
     createTask: async (client, projectId, body) => {
@@ -224,6 +241,13 @@ exports.cicdService = {
           finished_at = CURRENT_TIMESTAMP,
           duration_ms = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))::int * 1000
          WHERE run_id = $1`, [run.run_id]);
+            await client.query(`UPDATE dev_tasks
+         SET status = CASE WHEN status IN ('TODO', 'IN_PROGRESS') THEN 'DONE' ELSE status END,
+             related_pipeline_id = COALESCE(related_pipeline_id, $1),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE project_id = $2
+           AND (related_pipeline_id = $1 OR related_pipeline_id IS NULL)
+           AND status IN ('TODO', 'IN_PROGRESS')`, [pipelineId, pipeline.project_id]);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'Pipeline failed';
@@ -235,6 +259,13 @@ exports.cicdService = {
           finished_at = CURRENT_TIMESTAMP,
           duration_ms = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))::int * 1000
          WHERE run_id = $1`, [run.run_id]);
+            await client.query(`UPDATE dev_tasks
+         SET status = 'BLOCKED',
+             related_pipeline_id = COALESCE(related_pipeline_id, $1),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE project_id = $2
+           AND (related_pipeline_id = $1 OR related_pipeline_id IS NULL)
+           AND status IN ('TODO', 'IN_PROGRESS')`, [pipelineId, pipeline.project_id]);
         }
         return exports.cicdService.getRunDetail(client, run.run_id);
     },

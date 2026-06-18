@@ -15,7 +15,7 @@ const workspaceRoot = path_1.default.resolve(process.cwd(), process.env.SBOM_VAL
 const sourceRoot = path_1.default.join(workspaceRoot, 'sources');
 const safeName = (value) => value.replace(/[^a-zA-Z0-9_.-]/g, '-');
 const gitConfigArgs = () => {
-    const args = [];
+    const args = ['-c', 'core.longpaths=true'];
     if (process.env.GIT_SSL_BACKEND)
         args.push('-c', `http.sslBackend=${process.env.GIT_SSL_BACKEND}`);
     if (process.env.GIT_SSL_VERIFY === 'false')

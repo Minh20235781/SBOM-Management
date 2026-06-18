@@ -135,7 +135,7 @@ export interface SbomSnapshot {
   project_id: number;
   version_number: number;
   created_at: string;
-  source_type: 'FULL_SCAN' | 'INCREMENTAL_UPDATE' | 'IMPORT';
+  source_type: 'FULL_SCAN' | 'INCREMENTAL_UPDATE' | 'IMPORT' | 'AUTO_GENERATED' | 'NO_CHANGES';
   base_snapshot_id?: string | null;
   summary?: {
     totalComponents: number;
@@ -206,6 +206,22 @@ export interface DevTask {
   priority: 'LOW' | 'MEDIUM' | 'HIGH';
   assigned_to?: string | null;
   related_pipeline_id?: number | null;
+  related_pipeline_name?: string | null;
+  latest_run_id?: number | null;
+  latest_run_status?: string | null;
+  latest_snapshot_id?: string | null;
+  latest_snapshot_version?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectArtifact {
+  artifact_id: number;
+  project_id: number;
+  artifact_path: string;
+  artifact_name?: string | null;
+  artifact_type?: string | null;
+  hash: string;
   created_at: string;
   updated_at: string;
 }

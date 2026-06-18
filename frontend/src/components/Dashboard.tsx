@@ -164,7 +164,7 @@ const Dashboard: React.FC = () => {
 
   if (loading) return <div>Đang tải dashboard...</div>;
 
-  const recentSystems = [...systems].sort((left, right) => (Number(right.system_id) || 0) - (Number(left.system_id) || 0)).slice(0, 5);
+  const recentSystems = [...systems].sort((left, right) => (Number(right.system_id) || 0) - (Number(left.system_id) || 0)).slice(0, 8);
 
   return (
     <div className="space-y-6">
@@ -320,27 +320,27 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* 3. Bottom Section (2 Columns) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-6 items-start">
         
         {/* Recent Systems */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[23rem] flex flex-col">
-          <div className="flex items-end justify-between gap-3 mb-2">
+        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-end justify-between gap-3 mb-3">
             <div>
               <h3 className="font-bold text-slate-800">Hệ thống gần đây</h3>
               <p className="text-xs text-slate-500 mt-1">Các hệ thống vừa được tạo hoặc cập nhật từ SBOM upload</p>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {recentSystems.length} mục
             </span>
           </div>
-          <div className="space-y-3 flex-1 min-h-0 overflow-auto pr-1">
+          <div className="max-h-[17.75rem] space-y-2 overflow-y-auto pr-2">
             {recentSystems.length === 0 ? (
-              <div className="text-sm text-slate-400 py-10 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/60">
+              <div className="text-sm text-slate-400 py-10 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/60">
                 Chưa có hệ thống nào.
               </div>
             ) : (
               recentSystems.map(system => (
-                <div key={system.system_id} className="rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-3 shadow-sm hover:shadow-md transition-shadow">
+                <div key={system.system_id} className="rounded-lg border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-3.5 py-3 shadow-sm hover:shadow-md transition-shadow dark:border-slate-800 dark:from-slate-800 dark:to-slate-900">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
@@ -355,13 +355,13 @@ const Dashboard: React.FC = () => {
                       {Number((system as any).sbom_count || 0)} SBOM
                     </span>
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium">ID: {system.system_id}</span>
                     <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
                       Cập nhật gần nhất: {formatDateTimeVN((system as any).latest_sbom_timestamp || system.last_uploaded_at)}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm text-slate-600 min-h-[2.5rem] overflow-hidden">
+                  <p className="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
                     {system.description || 'Không có mô tả'}
                   </p>
                 </div>
@@ -371,11 +371,11 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Auditing Progress */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[23rem] flex flex-col">
+        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col dark:border-slate-800 dark:bg-slate-900">
           <h3 className="font-bold text-slate-800 mb-6">Tiến độ kiểm tra</h3>
-          <div className="flex-1 min-h-[16rem] w-full relative -ml-2 pr-1">
+          <div className="h-[20rem] w-full rounded-lg border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/40">
              <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 4, right: 18, left: -14, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 12, right: 18, left: -8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis
                   dataKey="name"

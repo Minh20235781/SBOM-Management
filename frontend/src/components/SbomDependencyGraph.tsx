@@ -14,10 +14,10 @@ type Props = {
 };
 
 const riskClass: Record<SbomGraphNode['riskLevel'], string> = {
-  LOW: 'fill-emerald-50 stroke-emerald-300 text-emerald-800',
-  MEDIUM: 'fill-blue-50 stroke-blue-300 text-blue-800',
-  HIGH: 'fill-amber-50 stroke-amber-300 text-amber-800',
-  CRITICAL: 'fill-red-50 stroke-red-300 text-red-800',
+  LOW: 'fill-emerald-50 stroke-emerald-300 text-emerald-800 dark:fill-emerald-950 dark:stroke-emerald-700',
+  MEDIUM: 'fill-blue-50 stroke-blue-300 text-blue-800 dark:fill-blue-950 dark:stroke-blue-700',
+  HIGH: 'fill-amber-50 stroke-amber-300 text-amber-800 dark:fill-yellow-900 dark:stroke-yellow-400',
+  CRITICAL: 'fill-red-50 stroke-red-300 text-red-800 dark:fill-rose-950 dark:stroke-rose-700',
 };
 
 const riskBadge: Record<SbomGraphNode['riskLevel'], string> = {
@@ -284,18 +284,18 @@ const SbomDependencyGraph: React.FC<Props> = ({
                           width={nodeWidth}
                           height={nodeHeight}
                           rx={8}
-                          className={node.type === 'PROJECT' ? 'fill-slate-900 stroke-slate-900' : riskClass[node.riskLevel]}
+                          className={node.type === 'PROJECT' ? 'fill-slate-900 stroke-slate-900 dark:fill-slate-950 dark:stroke-slate-600' : riskClass[node.riskLevel]}
                           strokeWidth={selected ? 3 : related ? 1.4 : 1}
                           stroke={selected ? '#2563eb' : undefined}
                         />
-                        <text x={14} y={23} className={node.type === 'PROJECT' ? 'fill-white text-sm font-semibold' : 'fill-slate-800 text-sm font-semibold'}>
+                        <text x={14} y={23} className={node.type === 'PROJECT' ? 'fill-white text-sm font-semibold' : 'fill-slate-800 text-sm font-semibold dark:fill-slate-100'}>
                           {wrapLabel(node.label).map((line, index) => (
                             <tspan key={line + index} x={14} dy={index === 0 ? 0 : 16}>
                               {line}
                             </tspan>
                           ))}
                         </text>
-                        <text x={14} y={62} className={node.type === 'PROJECT' ? 'fill-slate-300 text-xs' : 'fill-slate-500 text-xs'}>
+                        <text x={14} y={62} className={node.type === 'PROJECT' ? 'fill-slate-300 text-xs' : 'fill-slate-500 text-xs dark:fill-slate-400'}>
                           {node.type} - depth {node.depth} - CVE {node.vulnerabilityCount}
                         </text>
                       </g>

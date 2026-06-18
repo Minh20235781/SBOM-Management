@@ -1,0 +1,56 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.13.0
+2 info using node@v24.16.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\DGC\SBOM-Management\backend\.npmrc
+5 silly config load:file:C:\Users\DGC\.npmrc
+6 silly config load:file:C:\Users\DGC\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install swagger-ui-express swagger-jsdoc @types/swagger-ui-express
+8 verbose argv "install" "swagger-ui-express" "swagger-jsdoc" "@types/swagger-ui-express" "--save" "--cache" ".npm-cache"
+9 verbose logfile logs-max:10 dir:C:\Users\DGC\SBOM-Management\backend\.npm-cache\_logs\2026-06-18T17_07_41_442Z-
+10 verbose logfile C:\Users\DGC\SBOM-Management\backend\.npm-cache\_logs\2026-06-18T17_07_41_442Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 verbose shrinkwrap failed to load node_modules/.package-lock.json out of date, updated: node_modules
+14 silly idealTree buildDeps
+15 silly fetch manifest swagger-jsdoc@^6.2.8
+16 silly packumentCache full:https://registry.npmjs.org/swagger-jsdoc cache-miss
+17 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+18 http fetch GET https://registry.npmjs.org/swagger-jsdoc attempt 1 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+19 http fetch GET https://registry.npmjs.org/swagger-jsdoc attempt 2 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+20 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+21 http fetch GET https://registry.npmjs.org/swagger-jsdoc attempt 3 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+22 silly fetch manifest swagger-ui-express@^5.0.1
+23 silly packumentCache full:https://registry.npmjs.org/swagger-ui-express cache-miss
+24 http fetch GET https://registry.npmjs.org/npm attempt 3 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+25 http fetch GET https://registry.npmjs.org/swagger-ui-express attempt 1 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+26 http fetch GET https://registry.npmjs.org/swagger-ui-express attempt 2 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+27 http fetch GET https://registry.npmjs.org/swagger-ui-express attempt 3 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+28 silly fetch manifest @types/swagger-ui-express@^4.1.8
+29 silly packumentCache full:https://registry.npmjs.org/@types%2fswagger-ui-express cache-miss
+30 http fetch GET https://registry.npmjs.org/@types%2fswagger-ui-express attempt 1 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+31 http fetch GET https://registry.npmjs.org/@types%2fswagger-ui-express attempt 2 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+32 http fetch GET https://registry.npmjs.org/@types%2fswagger-ui-express attempt 3 failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
+33 silly placeDep ROOT @types/swagger-ui-express@ OK for: backend@1.0.0 want: ^4.1.8
+34 silly placeDep ROOT swagger-jsdoc@ OK for: backend@1.0.0 want: ^6.2.8
+35 silly placeDep ROOT swagger-ui-express@ OK for: backend@1.0.0 want: ^5.0.1
+36 verbose type system
+37 verbose stack FetchError: request to https://registry.npmjs.org/@types%2fswagger-ui-express failed, reason: unable to verify the first certificate; if the root CA is installed locally, try running Node.js with --use-system-ca
+37 verbose stack     at ClientRequest.<anonymous> (C:\Program Files\nodejs\node_modules\npm\node_modules\minipass-fetch\lib\index.js:130:14)
+37 verbose stack     at ClientRequest.emit (node:events:509:28)
+37 verbose stack     at emitErrorEvent (node:_http_client:109:11)
+37 verbose stack     at _destroy (node:_http_client:993:9)
+37 verbose stack     at onSocketNT (node:_http_client:1014:5)
+37 verbose stack     at process.processTicksAndRejections (node:internal/process/task_queues:91:21)
+38 error code UNABLE_TO_VERIFY_LEAF_SIGNATURE
+39 error errno UNABLE_TO_VERIFY_LEAF_SIGNATURE
+40 error request to https://registry.npmjs.org/@types%2fswagger-ui-express failed, reason: unable to verify the first certificate; if the root CA is installed locally, try running Node.js with --use-system-ca
+41 silly unfinished npm timer reify 1781802462029
+42 silly unfinished npm timer reify:loadTrees 1781802462031
+43 verbose cwd C:\Users\DGC\SBOM-Management\backend
+44 verbose os Windows_NT 10.0.22621
+45 verbose node v24.16.0
+46 verbose npm  v11.13.0
+47 verbose exit 1
+48 verbose code 1
+49 error A complete log of this run can be found in: C:\Users\DGC\SBOM-Management\backend\.npm-cache\_logs\2026-06-18T17_07_41_442Z-debug-0.log

@@ -1,0 +1,20 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.13.0
+2 info using node@v24.16.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\DGC\SBOM-Management\backend\.npmrc
+5 silly config load:file:C:\Users\DGC\.npmrc
+6 silly config load:file:C:\Users\DGC\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm ls @scarf/scarf
+8 verbose argv "ls" "@scarf/scarf" "--json" "--long"
+9 verbose logfile logs-max:10 dir:C:\Users\DGC\SBOM-Management\backend\.npm-cache\_logs\2026-06-18T17_11_28_803Z-
+10 verbose logfile C:\Users\DGC\SBOM-Management\backend\.npm-cache\_logs\2026-06-18T17_11_28_803Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 verbose shrinkwrap failed to load node_modules/.package-lock.json out of date, updated: node_modules
+14 verbose cwd C:\Users\DGC\SBOM-Management\backend
+15 verbose os Windows_NT 10.0.22621
+16 verbose node v24.16.0
+17 verbose npm  v11.13.0
+18 verbose exit 0
+19 info ok

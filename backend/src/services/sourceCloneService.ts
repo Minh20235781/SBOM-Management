@@ -13,7 +13,7 @@ const sourceRoot = path.join(workspaceRoot, 'sources');
 const safeName = (value: string) => value.replace(/[^a-zA-Z0-9_.-]/g, '-');
 
 const gitConfigArgs = () => {
-  const args: string[] = [];
+  const args: string[] = ['-c', 'core.longpaths=true'];
   if (process.env.GIT_SSL_BACKEND) args.push('-c', `http.sslBackend=${process.env.GIT_SSL_BACKEND}`);
   if (process.env.GIT_SSL_VERIFY === 'false') args.push('-c', 'http.sslVerify=false');
   return args;
