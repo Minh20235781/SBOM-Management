@@ -41,3 +41,46 @@ jobs:
           path: sbom.cdx.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Send SBOM to SBOM Management
+        shell: bash
+        env:
+          SBOM_API_URL: ${{ secrets.SBOM_API_URL }}
+          SBOM_PIPELINE_TOKEN: ${{ secrets.SBOM_PIPELINE_TOKEN }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SBOM_API_URL" ] || [ -z "$SBOM_PIPELINE_TOKEN" ]; then
+            echo "SBOM_API_URL or SBOM_PIPELINE_TOKEN is not configured; artifact upload remains available."
+            exit 0
+          fi
+
+          jq -n \
+            --arg repositoryUrl "$REPOSITORY_URL" \
+            --arg runId "${{ github.run_id }}" \
+            --arg runAttempt "${{ github.run_attempt }}" \
+            --arg commitSha "${{ github.sha }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg eventName "${{ github.event_name }}" \
+            --arg actor "${{ github.triggering_actor }}" \
+            --arg runUrl "$RUN_URL" \
+            --slurpfile sbom sbom.cdx.json \
+            '{
+              repositoryUrl: $repositoryUrl,
+              runId: $runId,
+              runAttempt: $runAttempt,
+              commitSha: $commitSha,
+              branch: $branch,
+              eventName: $eventName,
+              triggeredBy: $actor,
+              runUrl: $runUrl,
+              conclusion: "success",
+              sbom: $sbom[0]
+            }' > sbom-result.json
+
+          curl --fail-with-body --retry 3 --connect-timeout 15 --max-time 180 \
+            -X POST \
+            -H "Authorization: Bearer $SBOM_PIPELINE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @sbom-result.json \
+            "${SBOM_API_URL%/}/api/github-actions/results"

@@ -274,6 +274,39 @@ Flow:
 5. Bấm `Run Pipeline`.
 6. Xem pipeline runs, snapshot, change log và dependency graph.
 
+## Tích Hợp GitHub Actions Thật
+
+Backend cần các biến môi trường sau:
+
+```env
+# Fine-grained PAT hoặc GitHub App installation token có quyền Actions: Read and write
+GITHUB_TOKEN=github_pat_xxx
+GITHUB_WEBHOOK_SECRET=replace-with-a-random-webhook-secret
+SBOM_PIPELINE_TOKEN=replace-with-a-long-random-pipeline-token
+```
+
+Trong repository GitHub, tạo hai Actions secrets:
+
+```text
+SBOM_API_URL=https://your-public-sbom-backend.example
+SBOM_PIPELINE_TOKEN=<giống giá trị trên backend>
+```
+
+Workflow `.github/workflows/sbom.yml` sinh CycloneDX artifact và gửi kết quả về
+`POST /api/github-actions/results`. Để đồng bộ trạng thái run/job theo thời gian
+thực, tạo repository webhook trỏ tới:
+
+```text
+https://your-public-sbom-backend.example/api/github-actions/webhook
+```
+
+Chọn content type `application/json`, dùng cùng `GITHUB_WEBHOOK_SECRET`, rồi bật
+hai event `Workflow runs` và `Workflow jobs`. Pipeline trong ứng dụng phải dùng
+provider `GITHUB_ACTIONS`, repo URL chính xác và workflow file `sbom.yml`.
+
+Nút `Run pipeline` sẽ gọi GitHub `workflow_dispatch`. Backend phải truy cập được
+Internet và URL backend phải là HTTPS công khai để GitHub runner/webhook gọi về.
+
 ## API Chính
 
 SBOM:

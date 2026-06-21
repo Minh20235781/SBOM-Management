@@ -289,6 +289,12 @@ router.get('/pipelines/:pipelineId/runs', cicdController_1.cicdController.listRu
  *         description: Server error
  */
 router.post('/pipelines/:pipelineId/run', cicdController_1.cicdController.runPipeline);
+// GitHub Actions integration. The webhook uses GitHub's HMAC signature; the
+// result endpoint uses SBOM_PIPELINE_TOKEN configured in repository secrets.
+router.post('/pipelines/:pipelineId/github-dispatch', cicdController_1.cicdController.dispatchGitHub);
+router.post('/github-actions/webhook', cicdController_1.cicdController.githubWebhook);
+router.post('/github-actions/results', cicdController_1.cicdController.receiveGitHubResult);
+router.get('/cicd/monitoring', cicdController_1.cicdController.monitoring);
 /**
  * @swagger
  * /api/pipeline-runs/{runId}:

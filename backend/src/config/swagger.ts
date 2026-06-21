@@ -123,6 +123,7 @@ export const swaggerSpec = swaggerJSDoc({
             branch: { type: 'string', example: 'main' },
             trigger_type: { type: 'string', example: 'PUSH' },
             repo_url: { type: 'string', nullable: true },
+            workflow_file: { type: 'string', example: 'sbom.yml' },
             latest_status: { type: 'string', nullable: true },
           },
         },

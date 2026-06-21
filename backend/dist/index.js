@@ -21,7 +21,12 @@ dotenv_1.default.config();
 exports.app = (0, express_1.default)();
 const port = process.env.PORT || 5000;
 exports.app.use((0, cors_1.default)());
-exports.app.use(express_1.default.json({ limit: '50mb' }));
+exports.app.use(express_1.default.json({
+    limit: '50mb',
+    verify: (req, _res, buffer) => {
+        req.rawBody = Buffer.from(buffer);
+    },
+}));
 exports.app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 exports.app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec));
 exports.app.use('/api/sboms', sbomRoutes_1.default);

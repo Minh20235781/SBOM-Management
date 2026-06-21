@@ -419,7 +419,8 @@ export const ensureCicdSchema = async () => {
 
     await client.query(`
       ALTER TABLE cicd_pipelines
-        ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);
+        ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500),
+        ADD COLUMN IF NOT EXISTS workflow_file VARCHAR(255) DEFAULT 'sbom.yml';
     `);
 
     await client.query(`
@@ -446,7 +447,20 @@ export const ensureCicdSchema = async () => {
 
     await client.query(`
       ALTER TABLE cicd_pipeline_runs
-        ADD COLUMN IF NOT EXISTS validation_report JSONB;
+        ADD COLUMN IF NOT EXISTS validation_report JSONB,
+        ADD COLUMN IF NOT EXISTS external_run_id BIGINT,
+        ADD COLUMN IF NOT EXISTS external_run_attempt INTEGER,
+        ADD COLUMN IF NOT EXISTS external_run_url VARCHAR(1000),
+        ADD COLUMN IF NOT EXISTS event_name VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS conclusion VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS dispatch_request_id VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS sbom_id VARCHAR(255);
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cicd_pipeline_runs_external_run
+      ON cicd_pipeline_runs(external_run_id)
+      WHERE external_run_id IS NOT NULL;
     `);
 
     await client.query(`
@@ -503,6 +517,26 @@ export const ensureSbomValidationScenarioSchema = async () => {
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      ALTER TABLE cicd_pipeline_steps
+        ADD COLUMN IF NOT EXISTS external_job_id BIGINT;
+    `);
+
+    await client.query('DROP INDEX IF EXISTS idx_cicd_pipeline_steps_external;');
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cicd_pipeline_steps_external
+      ON cicd_pipeline_steps(pipeline_run_id, external_job_id, step_order);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS github_webhook_deliveries (
+        delivery_id VARCHAR(100) PRIMARY KEY,
+        event_name VARCHAR(100) NOT NULL,
+        payload JSONB,
+        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
