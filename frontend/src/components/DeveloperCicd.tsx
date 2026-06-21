@@ -64,7 +64,7 @@ const statusClass: Record<string, string> = {
 };
 
 const Badge = ({ value }: { value?: string | null }) => (
-  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass[value || ''] || statusClass.PENDING}`}>
+  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass[value || ''] || statusClass.PENDING} dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200`}>
     {value || '-'}
   </span>
 );
@@ -428,12 +428,12 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_1fr]">
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="mb-4 text-sm font-bold text-slate-800">Pipeline runs và SBOM snapshots</h3>
+          <h3 className="mb-4 text-sm font-bold text-slate-800 dark:text-slate-100">Pipeline runs và SBOM snapshots</h3>
           <div className="space-y-2">
             {runs.map(run => (
-              <button key={run.run_id} type="button" onClick={() => loadRunDetail(run.run_id)} className={`w-full rounded-lg border p-3 text-left transition ${selectedRun?.run_id === run.run_id ? 'border-sky-300 bg-sky-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <button key={run.run_id} type="button" onClick={() => loadRunDetail(run.run_id)} className={`w-full rounded-lg border p-3 text-left transition ${selectedRun?.run_id === run.run_id ? 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/35' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'}`}>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold text-slate-800">Run #{run.run_number} | {run.branch || selectedPipeline?.branch}</p>
+                  <p className="font-semibold text-slate-800 dark:text-slate-100">Run #{run.run_number} | {run.branch || selectedPipeline?.branch}</p>
                   <Badge value={run.status} />
                 </div>
                 <p className="mt-1 break-all text-xs text-slate-500">{selectedPipeline?.repo_url || 'Repository chưa cấu hình'} · {run.triggered_by || selectedPipeline?.trigger_type || 'Manual'}</p>
@@ -447,13 +447,13 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
             {runs.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">Chưa có pipeline run</div>}
           </div>
 
-          <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-700">
             <h4 className="mb-3 text-xs font-bold uppercase text-slate-400">Snapshots</h4>
             <div className="space-y-2">
               {snapshots.map(snapshot => (
-                <button key={snapshot.snapshot_id} type="button" onClick={() => setSelectedSnapshotId(snapshot.snapshot_id)} className={`w-full rounded-lg border p-3 text-left text-sm ${selectedSnapshotId === snapshot.snapshot_id ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <button key={snapshot.snapshot_id} type="button" onClick={() => setSelectedSnapshotId(snapshot.snapshot_id)} className={`w-full rounded-lg border p-3 text-left text-sm ${selectedSnapshotId === snapshot.snapshot_id ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30' : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-800">Snapshot v{snapshot.version_number}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-100">Snapshot v{snapshot.version_number}</span>
                     <Badge value={snapshot.source_type} />
                   </div>
                   <p className="mt-1 truncate text-xs text-slate-500">{snapshot.snapshot_id}</p>
