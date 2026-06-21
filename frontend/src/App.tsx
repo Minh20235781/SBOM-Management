@@ -10,7 +10,8 @@ import SystemSbomDetail from './components/SystemSbomDetail';
 import DeveloperCicd from './components/DeveloperCicd';
 import SbomValidationScenarios from './components/SbomValidationScenarios';
 import GlobalSearch from './components/GlobalSearch';
-import { AuditPage, CompliancePage, ComponentsPage, DependenciesPage, MonitoringPage, VulnerabilitiesPage } from './components/ManagementPages';
+import { AuditPage, CompliancePage, ComponentsPage, DependenciesPage, VulnerabilitiesPage } from './components/ManagementPages';
+import PipelineMonitoring from './components/PipelineMonitoring';
 import { API_BASE } from './api';
 import { type SBOMComponent, type BackendVulnerability, type CicdPipeline, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
@@ -673,7 +674,7 @@ function App() {
             {activeMenu === 'cve' && <VulnerabilitiesPage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} selectedVulnerabilityId={selectedVulnerabilityId} />}
             {activeMenu === 'compliance' && <CompliancePage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} />}
             {activeMenu === 'audit' && <AuditPage />}
-            {activeMenu === 'monitoring' && <MonitoringPage />}
+            {activeMenu === 'monitoring' && <PipelineMonitoring systems={systems} onOpenPipeline={pipeline => { setSelectedPipelineTarget(pipeline); setPipelineNavigationVersion(version => version + 1); setActiveMenu('pipeline'); }} />}
 
           </div>
         </div>

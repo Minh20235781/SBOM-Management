@@ -49,7 +49,7 @@ const statusClass: Record<string, string> = {
   LOW: 'border-emerald-100 bg-emerald-50 text-emerald-700',
   MEDIUM: 'border-sky-100 bg-sky-50 text-sky-700',
   HIGH: 'border-amber-100 bg-amber-50 text-amber-700',
-  INTERNAL: 'border-slate-200 bg-white text-slate-700',
+  INTERNAL: 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200',
   GITHUB_ACTIONS: 'border-sky-100 bg-sky-50 text-sky-700',
   JENKINS: 'border-amber-100 bg-amber-50 text-amber-700',
   GITLAB_CI: 'border-orange-100 bg-orange-50 text-orange-700',
@@ -107,7 +107,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
   const [pipelineForm, setPipelineForm] = useState({
     name: 'sbom-incremental-scan',
     branch: 'main',
-    provider: 'GITHUB_ACTIONS',
+    provider: 'INTERNAL',
     triggerType: 'PUSH',
     repoUrl: 'https://github.com/owner/repo.git',
   });
@@ -240,14 +240,14 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
     const res = await fetch(`${API_BASE}/api/pipelines/${selectedPipelineId}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ triggeredBy: 'Developer' }),
+      body: JSON.stringify({ triggeredBy: 'SBOM_MANAGEMENT_UI' }),
     });
     if (!res.ok) throw new Error('Không chạy được pipeline.');
     const run = await res.json();
     if (projectId) await loadProjectData(Number(projectId));
     await loadRuns(selectedPipelineId);
     await loadRunDetail(run.run_id);
-  }, 'Pipeline đã chạy xong và lưu SBOM như artifact của DevOps.');
+  }, 'Pipeline backend đã clone repository, chạy Syft/Grype và lưu kết quả thực tế.');
 
   return (
     <div className="space-y-6">
@@ -263,7 +263,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
         <div className="rounded-lg border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700">{message}</div>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="mb-4 flex items-center gap-2">
           <Server className="h-4 w-4 text-sky-500" />
           <h3 className="text-sm font-bold text-slate-800">Project scope</h3>
@@ -292,7 +292,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
       </section>
 
       <div>
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex items-center gap-2">
             <ListChecks className="h-4 w-4 text-indigo-500" />
             <h3 className="text-sm font-bold text-slate-800">1. Quản lý nhiệm vụ và liên kết pipeline/SBOM</h3>
@@ -352,7 +352,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
 
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <GitMerge className="h-4 w-4 text-sky-500" />
@@ -372,9 +372,9 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
             </label>
             <label className="min-w-0">
               <FieldLabel>Provider</FieldLabel>
-              <select value={pipelineForm.provider} onChange={event => setPipelineForm(current => ({ ...current, provider: event.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <option>INTERNAL</option>
-                <option>GITHUB_ACTIONS</option>
+              <select value={pipelineForm.provider} onChange={event => setPipelineForm(current => ({ ...current, provider: event.target.value }))} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                <option value="INTERNAL">BACKEND RUNNER (Syft + Grype)</option>
+                <option value="GITHUB_ACTIONS">GITHUB ACTIONS (nguồn tích hợp)</option>
                 <option>JENKINS</option>
                 <option>GITLAB_CI</option>
                 <option>CIRCLECI</option>
@@ -398,10 +398,10 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
             </button>
           </div>
 
-          <div className="rounded-lg border border-sky-100 bg-sky-50 p-4">
+          <div className="rounded-lg border border-sky-100 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pipeline đang chọn</p>
-            <p className="mt-1 truncate text-sm font-bold text-slate-800">{selectedPipeline?.name || 'Chưa chọn pipeline'}</p>
-            <p className="mt-2 break-all text-xs text-slate-500">{selectedPipeline?.repo_url || 'Tạo hoặc chọn pipeline để chạy.'}</p>
+            <p className="mt-1 truncate text-sm font-bold text-slate-800 dark:text-slate-100">{selectedPipeline?.name || 'Chưa chọn pipeline'}</p>
+            <p className="mt-2 break-all text-xs text-slate-500 dark:text-slate-400">{selectedPipeline?.repo_url || 'Tạo hoặc chọn pipeline để chạy.'}</p>
             <button type="button" onClick={runPipeline} disabled={!selectedPipelineId || loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">
               {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               Run pipeline
@@ -411,7 +411,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
 
         <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
           {pipelines.map(pipeline => (
-            <button key={pipeline.pipeline_id} type="button" onClick={() => setSelectedPipelineId(pipeline.pipeline_id)} className={`min-w-0 rounded-lg border p-4 text-left transition ${selectedPipelineId === pipeline.pipeline_id ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+            <button key={pipeline.pipeline_id} type="button" onClick={() => setSelectedPipelineId(pipeline.pipeline_id)} className={`min-w-0 rounded-lg border p-4 text-left transition ${selectedPipelineId === pipeline.pipeline_id ? 'border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/40' : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate font-bold text-slate-800">{pipeline.name}</p>
@@ -427,7 +427,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
       </section>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_1fr]">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h3 className="mb-4 text-sm font-bold text-slate-800">Pipeline runs và SBOM snapshots</h3>
           <div className="space-y-2">
             {runs.map(run => (
@@ -464,7 +464,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-800">Pipeline run detail</h3>
@@ -491,7 +491,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
       </div>
 
       {selectedSnapshotId && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-800">4. Xem và phân tích SBOM</h3>
@@ -506,10 +506,10 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
           </div>
 
           {validation && (
-            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-white p-2 text-emerald-600 ring-1 ring-slate-200">
+                  <div className="rounded-lg bg-white p-2 text-emerald-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
                     <ShieldCheck className="h-5 w-5" />
                   </div>
                   <div>
@@ -520,10 +520,10 @@ const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipe
                 <Badge value={validation.status} />
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-                <div className="rounded-md border border-slate-200 bg-white p-3"><p className="text-xs font-semibold uppercase text-slate-400">Compatibility</p><p className="mt-1 text-2xl font-bold text-slate-900">{validation.score}%</p></div>
-                <div className="rounded-md border border-slate-200 bg-white p-3"><p className="text-xs font-semibold uppercase text-slate-400">Matched</p><p className="mt-1 text-2xl font-bold text-emerald-600">{validation.matchedCount}/{validation.sourceComponentCount}</p></div>
-                <div className="rounded-md border border-slate-200 bg-white p-3"><p className="text-xs font-semibold uppercase text-slate-400">Missing</p><p className="mt-1 text-2xl font-bold text-rose-600">{validation.missingFromSbom.length}</p></div>
-                <div className="rounded-md border border-slate-200 bg-white p-3"><p className="text-xs font-semibold uppercase text-slate-400">Extra</p><p className="mt-1 text-2xl font-bold text-amber-600">{validation.extraInSbom.length}</p></div>
+                <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs font-semibold uppercase text-slate-400">Compatibility</p><p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{validation.score}%</p></div>
+                <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs font-semibold uppercase text-slate-400">Matched</p><p className="mt-1 text-2xl font-bold text-emerald-600">{validation.matchedCount}/{validation.sourceComponentCount}</p></div>
+                <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs font-semibold uppercase text-slate-400">Missing</p><p className="mt-1 text-2xl font-bold text-rose-600">{validation.missingFromSbom.length}</p></div>
+                <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs font-semibold uppercase text-slate-400">Extra</p><p className="mt-1 text-2xl font-bold text-amber-600">{validation.extraInSbom.length}</p></div>
               </div>
             </div>
           )}
