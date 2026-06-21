@@ -231,6 +231,9 @@ export const incrementalSbomService = {
       current = scanned.normalized;
       scannedArtifacts = scanned.artifacts;
       generationSource = 'PROJECT_ARTIFACTS';
+    } else if (body?.sbom) {
+      current = normalizeSbomPayload(body.sbom);
+      generationSource = 'SBOM_PAYLOAD';
     } else {
       const storedArtifacts = await artifactScannerService.loadProjectArtifacts(client, projectId);
       if (storedArtifacts.length > 0) {
@@ -238,9 +241,6 @@ export const incrementalSbomService = {
         current = scanned.normalized;
         scannedArtifacts = scanned.artifacts;
         generationSource = 'PROJECT_ARTIFACTS';
-      } else if (body?.sbom) {
-      current = normalizeSbomPayload(body.sbom);
-        generationSource = 'SBOM_PAYLOAD';
       } else {
         const latestSbom = await latestSbomForProject(client, projectId);
         if (!latestSbom && !baseSnapshot) {

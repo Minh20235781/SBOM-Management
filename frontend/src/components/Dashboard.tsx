@@ -319,8 +319,8 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Bottom Section (2 Columns) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-6 items-start">
+      {/* 3. Recent systems first, auditing progress below */}
+      <div className="flex min-w-0 flex-col gap-6">
         
         {/* Recent Systems */}
         <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col dark:border-slate-800 dark:bg-slate-900">

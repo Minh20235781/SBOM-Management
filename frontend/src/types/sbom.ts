@@ -261,6 +261,11 @@ export interface CicdPipelineRun {
   pipeline_name?: string;
   repo_url?: string | null;
   steps?: CicdPipelineStep[];
+  component_count?: number;
+  dependency_count?: number;
+  vulnerability_count?: number;
+  provider?: string;
+  trigger_type?: string;
 }
 
 export interface CicdPipelineStep {

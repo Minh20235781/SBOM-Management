@@ -9,10 +9,12 @@ import SbomSnapshots from './components/SbomSnapshots';
 import SystemSbomDetail from './components/SystemSbomDetail';
 import DeveloperCicd from './components/DeveloperCicd';
 import SbomValidationScenarios from './components/SbomValidationScenarios';
+import GlobalSearch from './components/GlobalSearch';
+import { AuditPage, CompliancePage, ComponentsPage, DependenciesPage, MonitoringPage, VulnerabilitiesPage } from './components/ManagementPages';
 import { API_BASE } from './api';
-import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
+import { type SBOMComponent, type BackendVulnerability, type CicdPipeline, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
-  Search, Database, LayoutDashboard, Box, ShieldAlert, 
+  Database, LayoutDashboard, Box, ShieldAlert, 
   Activity, ListTree, History, ShieldCheck, FileKey, 
   GitMerge, Server, Layers, UploadCloud, Info,
   PanelLeftClose, PanelLeftOpen, TestTube2, Moon, Sun
@@ -29,6 +31,10 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('sbom-theme') === 'dark');
   const [sbomUploadSession, setSbomUploadSession] = useState<SBOMUploadSession>(() => createDefaultSBOMUploadSession());
   const [selectedSystemDetail, setSelectedSystemDetail] = useState<any | null>(null);
+  const [searchPipelines, setSearchPipelines] = useState<CicdPipeline[]>([]);
+  const [selectedVulnerabilityId, setSelectedVulnerabilityId] = useState<number | null>(null);
+  const [selectedPipelineTarget, setSelectedPipelineTarget] = useState<CicdPipeline | null>(null);
+  const [pipelineNavigationVersion, setPipelineNavigationVersion] = useState(0);
 
   const formatMetadataValue = (value?: string | null) => {
     if (!value) return '-';
@@ -220,6 +226,25 @@ function App() {
   useEffect(() => { fetchSystems(); }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const loadSearchPipelines = async () => {
+      const responses = await Promise.all(systems.map(async system => {
+        try {
+          const response = await fetch(`${API_BASE}/projects/${system.system_id}/pipelines`);
+          if (!response.ok) return [];
+          const data = await response.json();
+          return Array.isArray(data) ? data : [];
+        } catch {
+          return [];
+        }
+      }));
+      if (!cancelled) setSearchPipelines(responses.flat());
+    };
+    loadSearchPipelines();
+    return () => { cancelled = true; };
+  }, [systems]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
     localStorage.setItem('sbom-theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
@@ -272,15 +297,25 @@ function App() {
               </button>
               <button 
                 onClick={() => setActiveMenu('components')}
-                className={sidebarItemClass(activeMenu === 'components')}
+                className={sidebarSplitItemClass(activeMenu === 'components')}
               >
-                <Layers className={sidebarIconClass(activeMenu === 'components')} /> Thành phần
+                <div className="flex items-center gap-3">
+                  <Layers className={sidebarIconClass(activeMenu === 'components')} /> Thành phần
+                </div>
+                {components.length > 0 && (
+                  <span className="rounded-full border border-purple-100 bg-purple-50 px-1.5 py-0.5 text-[10px] font-bold text-purple-600 dark:border-purple-900 dark:bg-purple-950/50 dark:text-purple-300">{components.length}</span>
+                )}
               </button>
               <button 
                 onClick={() => setActiveMenu('dependencies')}
-                className={sidebarItemClass(activeMenu === 'dependencies')}
+                className={sidebarSplitItemClass(activeMenu === 'dependencies')}
               >
-                <ListTree className={sidebarIconClass(activeMenu === 'dependencies')} /> Phụ thuộc
+                <div className="flex items-center gap-3">
+                  <ListTree className={sidebarIconClass(activeMenu === 'dependencies')} /> Phụ thuộc
+                </div>
+                {dependencies.length > 0 && (
+                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">{dependencies.length}</span>
+                )}
               </button>
               <button 
                 onClick={() => setActiveMenu('validation-scenarios')}
@@ -360,12 +395,24 @@ function App() {
           >
             {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
-          <div className="flex-1 max-w-xl relative">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Tìm kiếm hệ thống, CVE, pipeline..." 
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-10 pr-4 text-sm focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:bg-slate-900 dark:focus:ring-blue-900/50" 
+          <div className="min-w-0 flex-1">
+            <GlobalSearch
+              systems={systems}
+              vulnerabilities={vulnerabilities}
+              pipelines={searchPipelines}
+              onSelectSystem={system => {
+                setSelectedSystemDetail(system);
+                setActiveMenu('system-detail');
+              }}
+              onSelectVulnerability={vulnerability => {
+                setSelectedVulnerabilityId(vulnerability.vuln_id);
+                setActiveMenu('cve');
+              }}
+              onSelectPipeline={pipeline => {
+                setSelectedPipelineTarget(pipeline);
+                setPipelineNavigationVersion(version => version + 1);
+                setActiveMenu('pipeline');
+              }}
             />
           </div>
           <div className="flex items-center gap-6">
@@ -612,16 +659,21 @@ function App() {
             )}
 
             {activeMenu === 'pipeline' && (
-              <DeveloperCicd systems={systems} refreshSystems={fetchSystems} />
+              <DeveloperCicd
+                key={`pipeline-${selectedPipelineTarget?.pipeline_id || 'default'}-${pipelineNavigationVersion}`}
+                systems={systems}
+                refreshSystems={fetchSystems}
+                initialProjectId={selectedPipelineTarget?.project_id}
+                initialPipelineId={selectedPipelineTarget?.pipeline_id}
+              />
             )}
 
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'validation-scenarios' && activeMenu !== 'pipeline' && (
-              <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
-                <Activity className="w-16 h-16 mb-4 opacity-20" />
-                <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>
-                <p className="text-sm mt-2">Vui lòng chọn Dashboard hoặc mục Tải lên để xem trước.</p>
-              </div>
-            )}
+            {activeMenu === 'components' && <ComponentsPage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} />}
+            {activeMenu === 'dependencies' && <DependenciesPage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} />}
+            {activeMenu === 'cve' && <VulnerabilitiesPage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} selectedVulnerabilityId={selectedVulnerabilityId} />}
+            {activeMenu === 'compliance' && <CompliancePage components={components} dependencies={dependencies} vulnerabilities={vulnerabilities} metadata={metadata} />}
+            {activeMenu === 'audit' && <AuditPage />}
+            {activeMenu === 'monitoring' && <MonitoringPage />}
 
           </div>
         </div>

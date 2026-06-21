@@ -125,6 +125,12 @@ exports.sbomController = {
                 sbom: generated.sbom,
                 repoUrl: generated.normalizedRepoUrl,
                 repoName: generated.repoName,
+                hasExistingSbom: generated.detectedSbomFiles.length > 0,
+                detectedSbomFiles: generated.detectedSbomFiles,
+                detectedManifestFiles: generated.detectedManifestFiles,
+                message: generated.detectedSbomFiles.length > 0
+                    ? 'Detected existing SBOM files in repository.'
+                    : 'No existing SBOM file detected in repository.',
                 analysis: {
                     repoUrl: generated.normalizedRepoUrl,
                     repoName: generated.repoName,
@@ -140,6 +146,9 @@ exports.sbomController = {
                     sbomSizeBytes: Buffer.byteLength(sbomText, 'utf8'),
                     analysisDurationMs: Date.now() - started,
                     inferredMetadata: generated.inferredMetadata || null,
+                    hasExistingSbom: generated.detectedSbomFiles.length > 0,
+                    detectedSbomFiles: generated.detectedSbomFiles,
+                    detectedManifestFiles: generated.detectedManifestFiles,
                 },
             });
         }

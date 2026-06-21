@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Download,
   FileCode,
@@ -32,6 +33,9 @@ type RepoAnalysis = {
   sbomSizeBytes: number;
   analysisDurationMs: number;
   inferredMetadata?: InferredMetadata | null;
+  hasExistingSbom: boolean;
+  detectedSbomFiles: string[];
+  detectedManifestFiles: string[];
 };
 
 type InferredField = {
@@ -314,6 +318,29 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
               />
             </div>
             {repoAnalysis && (
+              <div className="space-y-3">
+              <div className={`rounded-xl border p-4 text-left ${repoAnalysis.hasExistingSbom ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40'}`}>
+                <div className="flex items-start gap-3">
+                  {repoAnalysis.hasExistingSbom
+                    ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />}
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold ${repoAnalysis.hasExistingSbom ? 'text-emerald-900 dark:text-emerald-200' : 'text-red-900 dark:text-red-200'}`}>
+                      {repoAnalysis.hasExistingSbom ? 'Đã phát hiện SBOM có sẵn' : 'Không phát hiện SBOM có sẵn'}
+                    </p>
+                    <p className={`mt-1 text-xs leading-5 ${repoAnalysis.hasExistingSbom ? 'text-emerald-800 dark:text-emerald-300' : 'text-red-800 dark:text-red-300'}`}>
+                      {repoAnalysis.hasExistingSbom
+                        ? 'Repository này đã chứa file SBOM. Bạn có thể import SBOM này để phân tích, hoặc sinh SBOM mới để đối chiếu với mã nguồn.'
+                        : 'Repository này chưa có file SBOM như sbom.json, bom.json, cyclonedx.json, spdx.json hoặc các định dạng SBOM phổ biến khác. Bạn có thể tiếp tục sinh SBOM mới từ mã nguồn.'}
+                    </p>
+                    {repoAnalysis.detectedSbomFiles.length > 0 && (
+                      <ul className="mt-2 space-y-1 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                        {repoAnalysis.detectedSbomFiles.map(file => <li key={file} className="break-all rounded bg-white/70 px-2 py-1 dark:bg-slate-950/60">{file}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-left">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -354,6 +381,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
                 <p className="mt-3 text-xs text-slate-500">
                   Hãy kiểm tra thông tin phân tích. Nếu đúng, bấm Xác nhận phân tích rồi mới Sinh và tải SBOM.
                 </p>
+              </div>
               </div>
             )}
           </div>

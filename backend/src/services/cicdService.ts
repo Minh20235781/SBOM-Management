@@ -1,44 +1,20 @@
 import { PoolClient } from 'pg';
 import { incrementalSbomService } from './incrementalSbomService';
-import { artifactScannerService, ProjectArtifactFile } from './artifactScannerService';
 import { sbomValidationService } from './sbomValidationService';
+import { generateSbomFromGitHubRepo, GeneratedSbomResult } from './syftGeneratorService';
+import { parseAndSaveSBOM } from './sbomParserService';
 
 const runSteps = [
-  'Checkout source code',
-  'Read dependency files',
-  'Generate / Update SBOM',
+  'Clone / fetch repository',
+  'Detect dependency manifests',
+  'Detect existing SBOM',
+  'Generate SBOM with Syft',
+  'Store SBOM data',
+  'Scan vulnerabilities with Grype',
   'Validate SBOM against source',
-  'Compare SBOM snapshot',
-  'Store SBOM snapshot',
   'Update dependency graph',
+  'Generate pipeline report',
 ];
-
-const sampleArtifacts = (projectName: string, runNumber: number): ProjectArtifactFile[] => {
-  const dependencies = runNumber <= 1
-    ? {
-        react: '^19.2.5',
-        vite: '^8.0.10',
-        lodash: '^4.17.20',
-        moment: '^2.29.4',
-      }
-    : {
-        react: '^19.2.5',
-        vite: '^8.0.10',
-        axios: '^1.16.0',
-        lodash: '^4.17.21',
-      };
-
-  return [{
-    artifactPath: 'package.json',
-    artifactName: 'package.json',
-    artifactType: 'package.json',
-    content: JSON.stringify({
-      name: projectName.toLowerCase().replace(/[^a-z0-9-]+/g, '-') || 'demo-project',
-      version: '1.0.0',
-      dependencies,
-    }, null, 2),
-  }];
-};
 
 const parseId = (value: unknown) => {
   const id = Number(value);
@@ -167,7 +143,10 @@ export const cicdService = {
 
   listRuns: async (client: PoolClient, pipelineId: number) => {
     const { rows } = await client.query(
-      `SELECT r.*, s.version_number AS generated_snapshot_version
+      `SELECT r.*, s.version_number AS generated_snapshot_version, s.summary AS snapshot_summary,
+        (SELECT COUNT(*)::int FROM sbom_components c WHERE c.snapshot_id = r.generated_sbom_snapshot_id) AS component_count,
+        (SELECT COUNT(*)::int FROM sbom_dependencies d WHERE d.snapshot_id = r.generated_sbom_snapshot_id) AS dependency_count,
+        (SELECT COUNT(*)::int FROM vulnerability v JOIN sbom_metadata m ON m.sbom_id = v.sbom_id WHERE m.system_id = r.project_id) AS vulnerability_count
        FROM cicd_pipeline_runs r
        LEFT JOIN sbom_snapshots s ON s.snapshot_id = r.generated_sbom_snapshot_id
        WHERE r.pipeline_id = $1
@@ -179,7 +158,11 @@ export const cicdService = {
 
   getRunDetail: async (client: PoolClient, runId: number) => {
     const runResult = await client.query(
-      `SELECT r.*, p.name AS pipeline_name, p.repo_url, s.version_number AS generated_snapshot_version, s.summary AS snapshot_summary
+      `SELECT r.*, p.name AS pipeline_name, p.repo_url, p.provider, p.trigger_type,
+        s.version_number AS generated_snapshot_version, s.summary AS snapshot_summary,
+        (SELECT COUNT(*)::int FROM sbom_components c WHERE c.snapshot_id = r.generated_sbom_snapshot_id) AS component_count,
+        (SELECT COUNT(*)::int FROM sbom_dependencies d WHERE d.snapshot_id = r.generated_sbom_snapshot_id) AS dependency_count,
+        (SELECT COUNT(*)::int FROM vulnerability v JOIN sbom_metadata m ON m.sbom_id = v.sbom_id WHERE m.system_id = r.project_id) AS vulnerability_count
        FROM cicd_pipeline_runs r
        JOIN cicd_pipelines p ON p.pipeline_id = r.pipeline_id
        LEFT JOIN sbom_snapshots s ON s.snapshot_id = r.generated_sbom_snapshot_id
@@ -227,7 +210,7 @@ export const cicdService = {
         pipelineId,
         pipeline.project_id,
         runNumber,
-        body?.commitHash || body?.commit_hash || `demo-${String(runNumber).padStart(4, '0')}`,
+        body?.commitHash || body?.commit_hash || null,
         body?.branch || pipeline.branch,
         body?.triggeredBy || body?.triggered_by || 'Developer',
       ]
@@ -243,6 +226,8 @@ export const cicdService = {
     }
 
     let generatedSnapshotId: string | null = null;
+    let generated: GeneratedSbomResult | null = null;
+    let storedSbomId: string | null = null;
     try {
       for (const [index, name] of runSteps.entries()) {
         await client.query(
@@ -253,22 +238,29 @@ export const cicdService = {
         );
 
         let logs = `${name} completed successfully.`;
-        if (name === 'Read dependency files') {
-          const artifacts = await artifactScannerService.loadProjectArtifacts(client, pipeline.project_id);
-          if (artifacts.length === 0) {
-            const seeded = sampleArtifacts(pipeline.project_name, runNumber);
-            await artifactScannerService.saveProjectArtifacts(client, pipeline.project_id, seeded);
-            logs = `No stored dependency files found. Seeded demo package.json from ${pipeline.repo_url || 'repo URL'}.`;
-          } else if (runNumber === 2) {
-            await artifactScannerService.saveProjectArtifacts(client, pipeline.project_id, sampleArtifacts(pipeline.project_name, runNumber));
-            logs = 'Detected dependency manifest change: added axios, updated lodash, removed moment.';
-          } else {
-            logs = `Read ${artifacts.length} dependency file(s) for ${pipeline.project_name}.`;
-          }
+        if (name === 'Clone / fetch repository') {
+          if (!pipeline.repo_url) throw new Error('Pipeline repository URL is required.');
+          generated = await generateSbomFromGitHubRepo(pipeline.repo_url);
+          logs = `Repository fetched successfully: ${generated.normalizedRepoUrl}`;
         }
 
-        if (name === 'Generate / Update SBOM') {
-          const result = await incrementalSbomService.generate(client, pipeline.project_id, {});
+        if (name === 'Detect dependency manifests') {
+          if (!generated) throw new Error('Repository has not been fetched.');
+          logs = generated.detectedManifestFiles.length > 0
+            ? `Detected ${generated.detectedManifestFiles.length} manifest(s): ${generated.detectedManifestFiles.join(', ')}`
+            : 'No supported dependency manifest was detected.';
+        }
+
+        if (name === 'Detect existing SBOM') {
+          if (!generated) throw new Error('Repository has not been fetched.');
+          logs = generated.detectedSbomFiles.length > 0
+            ? `Detected existing SBOM: ${generated.detectedSbomFiles.join(', ')}`
+            : 'No existing SBOM detected; a new SBOM will be generated from source.';
+        }
+
+        if (name === 'Generate SBOM with Syft') {
+          if (!generated) throw new Error('Repository has not been fetched.');
+          const result = await incrementalSbomService.generate(client, pipeline.project_id, { sbom: generated.sbom });
           generatedSnapshotId = result.snapshotId;
           logs = result.skipped
             ? `No dependency change. Reusing snapshot ${result.snapshotId}.`
@@ -277,6 +269,22 @@ export const cicdService = {
             'UPDATE cicd_pipeline_runs SET generated_sbom_snapshot_id = $1 WHERE run_id = $2',
             [generatedSnapshotId, run.run_id]
           );
+        }
+
+        if (name === 'Store SBOM data') {
+          if (!generated) throw new Error('SBOM has not been generated.');
+          storedSbomId = await parseAndSaveSBOM(client, { sbom: generated.sbom, system_id: pipeline.project_id });
+          const componentCount = Array.isArray(generated.sbom?.components) ? generated.sbom.components.length : 0;
+          const dependencyCount = Array.isArray(generated.sbom?.dependencies)
+            ? generated.sbom.dependencies.reduce((sum: number, item: any) => sum + (Array.isArray(item.dependsOn) ? item.dependsOn.length : 0), 0)
+            : 0;
+          logs = `Stored SBOM ${storedSbomId}: ${componentCount} components, ${dependencyCount} dependencies.`;
+        }
+
+        if (name === 'Scan vulnerabilities with Grype') {
+          if (!storedSbomId) throw new Error('Stored SBOM is required before vulnerability scanning.');
+          const result = await client.query('SELECT COUNT(*)::int AS count FROM vulnerability WHERE sbom_id = $1', [storedSbomId]);
+          logs = `Grype scan completed: ${result.rows[0]?.count || 0} vulnerability finding(s).`;
         }
 
         if (name === 'Validate SBOM against source' && generatedSnapshotId) {
@@ -288,13 +296,17 @@ export const cicdService = {
           );
         }
 
-        if (name === 'Compare SBOM snapshot' && generatedSnapshotId) {
+        if (name === 'Update dependency graph' && generatedSnapshotId) {
           const changes = await incrementalSbomService.getChanges(client, generatedSnapshotId);
-          logs = `Change log contains ${changes.length} item(s).`;
+          logs = `Dependency graph updated from snapshot ${generatedSnapshotId}; ${changes.length} change item(s).`;
         }
 
-        if (name === 'Store SBOM snapshot' && generatedSnapshotId) {
-          logs = `Stored generated snapshot ${generatedSnapshotId}.`;
+        if (name === 'Generate pipeline report') {
+          const componentCount = generated && Array.isArray(generated.sbom?.components) ? generated.sbom.components.length : 0;
+          const vulnerabilityResult = storedSbomId
+            ? await client.query('SELECT COUNT(*)::int AS count FROM vulnerability WHERE sbom_id = $1', [storedSbomId])
+            : { rows: [{ count: 0 }] };
+          logs = `Pipeline completed. Components: ${componentCount}; vulnerabilities: ${vulnerabilityResult.rows[0]?.count || 0}; snapshot: ${generatedSnapshotId || 'none'}.`;
         }
 
         await client.query(

@@ -177,6 +177,10 @@ exports.incrementalSbomService = {
             scannedArtifacts = scanned.artifacts;
             generationSource = 'PROJECT_ARTIFACTS';
         }
+        else if (body?.sbom) {
+            current = (0, sbomAlgorithms_1.normalizeSbomPayload)(body.sbom);
+            generationSource = 'SBOM_PAYLOAD';
+        }
         else {
             const storedArtifacts = await artifactScannerService_1.artifactScannerService.loadProjectArtifacts(client, projectId);
             if (storedArtifacts.length > 0) {
@@ -184,10 +188,6 @@ exports.incrementalSbomService = {
                 current = scanned.normalized;
                 scannedArtifacts = scanned.artifacts;
                 generationSource = 'PROJECT_ARTIFACTS';
-            }
-            else if (body?.sbom) {
-                current = (0, sbomAlgorithms_1.normalizeSbomPayload)(body.sbom);
-                generationSource = 'SBOM_PAYLOAD';
             }
             else {
                 const latestSbom = await latestSbomForProject(client, projectId);

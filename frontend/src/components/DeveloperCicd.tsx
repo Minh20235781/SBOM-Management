@@ -1,17 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
-  FileCode2,
   GitBranch,
   GitMerge,
-  Import,
-  Layers3,
   ListChecks,
   Play,
   RefreshCw,
   Server,
   ShieldCheck,
-  UploadCloud,
   XCircle,
 } from 'lucide-react';
 import SbomDependencyGraph from './SbomDependencyGraph';
@@ -19,7 +15,6 @@ import {
   type CicdPipeline,
   type CicdPipelineRun,
   type DevTask,
-  type ProjectArtifact,
   type SbomChangeLog,
   type SbomGraphResponse,
   type SbomSnapshot,
@@ -37,6 +32,8 @@ type SystemOption = {
 type Props = {
   systems: SystemOption[];
   refreshSystems?: () => Promise<void>;
+  initialProjectId?: number;
+  initialPipelineId?: number;
 };
 
 const statusClass: Record<string, string> = {
@@ -66,61 +63,6 @@ const statusClass: Record<string, string> = {
   FAIL: 'border-rose-100 bg-rose-50 text-rose-700',
 };
 
-const dependencyManifest = {
-  artifactPath: 'package.json',
-  artifactName: 'package.json',
-  artifactType: 'package.json',
-  content: JSON.stringify({
-    name: 'developer-sbom-demo',
-    version: '1.0.0',
-    dependencies: {
-      '@vitejs/plugin-react': '^6.0.1',
-      axios: '^1.16.0',
-      react: '^19.2.5',
-      recharts: '^3.8.1',
-    },
-  }, null, 2),
-};
-
-const importedCycloneDx = {
-  bomFormat: 'CycloneDX',
-  specVersion: '1.5',
-  serialNumber: 'urn:uuid:developer-import-demo',
-  metadata: {
-    timestamp: new Date().toISOString(),
-    component: {
-      type: 'application',
-      name: 'third-party-web-module',
-      version: '2.0.0',
-      'bom-ref': 'third-party-web-module',
-    },
-  },
-  components: [
-    {
-      type: 'library',
-      name: 'axios',
-      version: '1.16.0',
-      purl: 'pkg:npm/axios@1.16.0',
-      'bom-ref': 'pkg:npm/axios@1.16.0',
-      licenses: [{ license: { id: 'MIT' } }],
-    },
-    {
-      type: 'library',
-      name: 'react',
-      version: '19.2.5',
-      purl: 'pkg:npm/react@19.2.5',
-      'bom-ref': 'pkg:npm/react@19.2.5',
-      licenses: [{ license: { id: 'MIT' } }],
-    },
-  ],
-  dependencies: [
-    {
-      ref: 'third-party-web-module',
-      dependsOn: ['pkg:npm/axios@1.16.0', 'pkg:npm/react@19.2.5'],
-    },
-  ],
-};
-
 const Badge = ({ value }: { value?: string | null }) => (
   <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass[value || ''] || statusClass.PENDING}`}>
     {value || '-'}
@@ -131,18 +73,20 @@ const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <span className="mb-1 block text-xs font-semibold text-slate-500">{children}</span>
 );
 
-const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
+const formatDateTime = (value?: string | null) => value ? new Date(value).toLocaleString('vi-VN') : '-';
+const formatDuration = (value?: number | null) => value == null ? '-' : value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(1)} s`;
+
+const DeveloperCicd: React.FC<Props> = ({ systems, initialProjectId, initialPipelineId }) => {
   const preferredSystem = useMemo(
     () => systems.find(system => system.name === 'LaKhe-Management-v2') || systems[0],
     [systems]
   );
-  const [projectId, setProjectId] = useState<number | ''>('');
+  const [projectId, setProjectId] = useState<number | ''>(initialProjectId || '');
   const [tasks, setTasks] = useState<DevTask[]>([]);
   const [pipelines, setPipelines] = useState<CicdPipeline[]>([]);
   const [runs, setRuns] = useState<CicdPipelineRun[]>([]);
   const [snapshots, setSnapshots] = useState<SbomSnapshot[]>([]);
-  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(initialPipelineId || null);
   const [selectedRun, setSelectedRun] = useState<CicdPipelineRun | null>(null);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
   const [changes, setChanges] = useState<SbomChangeLog[]>([]);
@@ -179,22 +123,19 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
   }, [preferredSystem, projectId]);
 
   const loadProjectData = async (id: number) => {
-    const [tasksRes, pipelinesRes, snapshotsRes, artifactsRes] = await Promise.all([
+    const [tasksRes, pipelinesRes, snapshotsRes] = await Promise.all([
       fetch(`${API_BASE}/api/projects/${id}/tasks`),
       fetch(`${API_BASE}/api/projects/${id}/pipelines`),
       fetch(`${API_BASE}/api/projects/${id}/sbom/snapshots`),
-      fetch(`${API_BASE}/api/projects/${id}/artifacts`),
     ]);
-    const [tasksData, pipelinesData, snapshotsData, artifactsData] = await Promise.all([
+    const [tasksData, pipelinesData, snapshotsData] = await Promise.all([
       tasksRes.json(),
       pipelinesRes.json(),
       snapshotsRes.json(),
-      artifactsRes.json(),
     ]);
     setTasks(Array.isArray(tasksData) ? tasksData : []);
     setPipelines(Array.isArray(pipelinesData) ? pipelinesData : []);
     setSnapshots(Array.isArray(snapshotsData) ? snapshotsData : []);
-    setArtifacts(Array.isArray(artifactsData) ? artifactsData : []);
     const nextPipelineId = pipelinesData[0]?.pipeline_id || null;
     const nextSnapshotId = snapshotsData[0]?.snapshot_id || null;
     setSelectedPipelineId(current => current || nextPipelineId);
@@ -294,54 +235,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
     setSelectedPipelineId(pipeline.pipeline_id);
   }, 'Đã tạo pipeline CI/CD cho project.');
 
-  const saveDependencyFiles = () => withLoading(async () => {
-    if (!projectId) return;
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/artifacts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dependencyFiles: [dependencyManifest] }),
-    });
-    if (!res.ok) throw new Error('Không lưu được dependency file.');
-    await loadProjectData(Number(projectId));
-  }, 'Đã lưu package.json làm nguồn cập nhật thành phần/phụ thuộc.');
-
-  const generateSnapshot = () => withLoading(async () => {
-    if (!projectId) return;
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/sbom/auto-generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dependencyFiles: [dependencyManifest] }),
-    });
-    if (!res.ok) throw new Error('Không sinh được SBOM snapshot.');
-    const result = await res.json();
-    await loadProjectData(Number(projectId));
-    setSelectedSnapshotId(result.snapshotId);
-  }, 'Đã khởi tạo/cập nhật SBOM snapshot từ dependency file.');
-
-  const importSbom = () => withLoading(async () => {
-    if (!projectId) return;
-    const res = await fetch(`${API_BASE}/api/sboms/upload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_id: projectId,
-        sbom: importedCycloneDx,
-        repoUrl: pipelineForm.repoUrl,
-      }),
-    });
-    if (!res.ok) throw new Error('Không import được SBOM.');
-    const snapshotRes = await fetch(`${API_BASE}/api/projects/${projectId}/sbom/incremental-generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sbom: importedCycloneDx }),
-    });
-    if (!snapshotRes.ok) throw new Error('Đã import SBOM nhưng chưa tạo được snapshot phân tích.');
-    const result = await snapshotRes.json();
-    await refreshSystems?.();
-    await loadProjectData(Number(projectId));
-    setSelectedSnapshotId(result.snapshotId);
-  }, 'Đã import SBOM CycloneDX và chuẩn hóa thành snapshot phân tích.');
-
   const runPipeline = () => withLoading(async () => {
     if (!selectedPipelineId) return;
     const res = await fetch(`${API_BASE}/api/pipelines/${selectedPipelineId}/run`, {
@@ -359,10 +252,10 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
   return (
     <div className="space-y-6">
       <div className="border-b border-slate-200 pb-5">
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Developer workflow</p>
-        <h2 className="mt-1 text-2xl font-bold text-slate-900">Quản lý Task, CI/CD và SBOM tập trung</h2>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">SBOM pipeline operations</p>
+        <h2 className="mt-1 text-2xl font-bold text-slate-900">Pipeline SBOM từ repository thực tế</h2>
         <p className="mt-2 max-w-4xl text-sm text-slate-500">
-          Theo dõi task, pipeline, dependency file, SBOM import/generated, change log và đồ thị phụ thuộc trên cùng một project.
+          Clone repository, phát hiện manifest/SBOM, chạy Syft và Grype, lưu kết quả rồi theo dõi từng bước cùng lỗi phát sinh.
         </p>
       </div>
 
@@ -398,7 +291,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div>
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <ListChecks className="h-4 w-4 text-indigo-500" />
@@ -427,7 +320,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
               Tạo task
             </button>
           </div>
-          <div className="mt-4 overflow-hidden rounded-lg border border-slate-100">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-100">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
@@ -457,45 +350,13 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <UploadCloud className="h-4 w-4 text-emerald-500" />
-            <h3 className="text-sm font-bold text-slate-800">2, 3, 6. SBOM và dependency source</h3>
-          </div>
-          <div className="space-y-3">
-            <button type="button" onClick={saveDependencyFiles} disabled={!projectId || loading} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-              <FileCode2 className="h-4 w-4" />
-              Lưu/cập nhật package.json
-            </button>
-            <button type="button" onClick={generateSnapshot} disabled={!projectId || loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-              <Layers3 className="h-4 w-4" />
-              Khởi tạo/cập nhật SBOM
-            </button>
-            <button type="button" onClick={importSbom} disabled={!projectId || loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-              <Import className="h-4 w-4" />
-              Import SBOM CycloneDX
-            </button>
-          </div>
-          <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3">
-            <p className="text-xs font-bold uppercase text-slate-400">Dependency files</p>
-            <div className="mt-2 space-y-2">
-              {artifacts.map(artifact => (
-                <div key={artifact.artifact_id} className="flex items-center justify-between gap-3 text-xs">
-                  <span className="font-medium text-slate-700">{artifact.artifact_path}</span>
-                  <span className="font-mono text-slate-400">{artifact.hash.slice(0, 8)}</span>
-                </div>
-              ))}
-              {artifacts.length === 0 && <p className="text-xs text-slate-400">Chưa lưu dependency file.</p>}
-            </div>
-          </div>
-        </section>
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <GitMerge className="h-4 w-4 text-sky-500" />
-            <h3 className="text-sm font-bold text-slate-800">5. Tích hợp tạo SBOM vào CI/CD</h3>
+            <h3 className="text-sm font-bold text-slate-800">Cấu hình và chạy pipeline</h3>
           </div>
           {loading && <RefreshCw className="h-4 w-4 animate-spin text-sky-500" />}
         </div>
@@ -575,7 +436,12 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
                   <p className="font-semibold text-slate-800">Run #{run.run_number} | {run.branch || selectedPipeline?.branch}</p>
                   <Badge value={run.status} />
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{run.generated_snapshot_version ? `Snapshot v${run.generated_snapshot_version}` : 'No snapshot yet'} | {run.commit_hash}</p>
+                <p className="mt-1 break-all text-xs text-slate-500">{selectedPipeline?.repo_url || 'Repository chưa cấu hình'} · {run.triggered_by || selectedPipeline?.trigger_type || 'Manual'}</p>
+                <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-slate-500">
+                  <span>Bắt đầu: {formatDateTime(run.started_at)}</span><span>Thời lượng: {formatDuration(run.duration_ms)}</span>
+                  <span>Component: {run.component_count ?? run.snapshot_summary?.totalComponents ?? 0}</span><span>Dependency: {run.dependency_count ?? 0}</span>
+                  <span>Vulnerability: {run.vulnerability_count ?? 0}</span><span>{run.generated_snapshot_version ? `Snapshot v${run.generated_snapshot_version}` : 'Chưa có snapshot'}</span>
+                </div>
               </button>
             ))}
             {runs.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">Chưa có pipeline run</div>}
