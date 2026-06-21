@@ -150,8 +150,8 @@ export const cicdService = {
   createPipeline: async (client: PoolClient, projectId: number, body: any) => {
     const { rows } = await client.query(
       `INSERT INTO cicd_pipelines
-        (project_id, name, provider, branch, trigger_type, repo_url)
-       VALUES ($1,$2,$3,$4,$5,$6)
+        (project_id, name, provider, branch, trigger_type, repo_url, workflow_file)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING *`,
       [
         projectId,
@@ -160,6 +160,7 @@ export const cicdService = {
         String(body?.branch || 'main').trim(),
         normalizeStatus(body?.triggerType || body?.trigger_type, 'MANUAL'),
         String(body?.repoUrl || body?.repo_url || '').trim() || null,
+        String(body?.workflowFile || body?.workflow_file || 'sbom.yml').trim(),
       ]
     );
     return rows[0];

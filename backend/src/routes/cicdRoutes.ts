@@ -295,6 +295,13 @@ router.get('/pipelines/:pipelineId/runs', cicdController.listRuns);
  */
 router.post('/pipelines/:pipelineId/run', cicdController.runPipeline);
 
+// GitHub Actions integration. The webhook uses GitHub's HMAC signature; the
+// result endpoint uses SBOM_PIPELINE_TOKEN configured in repository secrets.
+router.post('/pipelines/:pipelineId/github-dispatch', cicdController.dispatchGitHub);
+router.post('/github-actions/webhook', cicdController.githubWebhook);
+router.post('/github-actions/results', cicdController.receiveGitHubResult);
+router.get('/cicd/monitoring', cicdController.monitoring);
+
 /**
  * @swagger
  * /api/pipeline-runs/{runId}:

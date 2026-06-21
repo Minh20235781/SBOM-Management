@@ -419,7 +419,8 @@ export const ensureCicdSchema = async () => {
 
     await client.query(`
       ALTER TABLE cicd_pipelines
-        ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500);
+        ADD COLUMN IF NOT EXISTS repo_url VARCHAR(500),
+        ADD COLUMN IF NOT EXISTS workflow_file VARCHAR(255) DEFAULT 'sbom.yml';
     `);
 
     await client.query(`
@@ -446,7 +447,20 @@ export const ensureCicdSchema = async () => {
 
     await client.query(`
       ALTER TABLE cicd_pipeline_runs
-        ADD COLUMN IF NOT EXISTS validation_report JSONB;
+        ADD COLUMN IF NOT EXISTS validation_report JSONB,
+        ADD COLUMN IF NOT EXISTS external_run_id BIGINT,
+        ADD COLUMN IF NOT EXISTS external_run_attempt INTEGER,
+        ADD COLUMN IF NOT EXISTS external_run_url VARCHAR(1000),
+        ADD COLUMN IF NOT EXISTS event_name VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS conclusion VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS dispatch_request_id VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS sbom_id VARCHAR(255);
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cicd_pipeline_runs_external_run
+      ON cicd_pipeline_runs(external_run_id)
+      WHERE external_run_id IS NOT NULL;
     `);
 
     await client.query(`
@@ -488,6 +502,91 @@ export const ensureCicdSchema = async () => {
 export const ensureSbomValidationScenarioSchema = async () => {
   const client = await pool.connect();
   try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sbom_repositories (
+        repository_id VARCHAR(80) PRIMARY KEY,
+        system_id INTEGER REFERENCES system(system_id) ON DELETE SET NULL,
+        name VARCHAR(255) NOT NULL,
+        github_url VARCHAR(500) UNIQUE NOT NULL,
+        architecture_type VARCHAR(255) NOT NULL,
+        tech_stack JSONB NOT NULL DEFAULT '[]'::jsonb,
+        package_managers JSONB NOT NULL DEFAULT '[]'::jsonb,
+        expected_dependency_files JSONB NOT NULL DEFAULT '[]'::jsonb,
+        application_type VARCHAR(80) NOT NULL DEFAULT 'Web Application',
+        repo_scope VARCHAR(80) NOT NULL DEFAULT 'Single Repository',
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      ALTER TABLE cicd_pipeline_steps
+        ADD COLUMN IF NOT EXISTS external_job_id BIGINT;
+    `);
+
+    await client.query('DROP INDEX IF EXISTS idx_cicd_pipeline_steps_external;');
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cicd_pipeline_steps_external
+      ON cicd_pipeline_steps(pipeline_run_id, external_job_id, step_order);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS github_webhook_deliveries (
+        delivery_id VARCHAR(100) PRIMARY KEY,
+        event_name VARCHAR(100) NOT NULL,
+        payload JSONB,
+        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      INSERT INTO sbom_repositories
+        (repository_id, name, github_url, architecture_type, tech_stack, package_managers, expected_dependency_files, description)
+      VALUES
+        ('spring-petclinic', 'Spring PetClinic', 'https://github.com/spring-projects/spring-petclinic', 'Monolithic Spring Boot web application', '["Java","Spring Boot"]', '["Maven"]', '["pom.xml"]', 'Reference Spring Boot web application used for PetClinic demos.'),
+        ('ghost', 'Ghost CMS', 'https://github.com/TryGhost/Ghost', 'Node.js CMS web application', '["Node.js","Ember.js"]', '["Yarn","npm"]', '["package.json","yarn.lock"]', 'Open-source publishing and CMS platform.'),
+        ('nodebb', 'NodeBB', 'https://github.com/NodeBB/NodeBB', 'Node.js forum web application', '["Node.js","Express"]', '["npm"]', '["package.json","package-lock.json"]', 'Modern web forum software built on Node.js.'),
+        ('bookstack', 'BookStack', 'https://github.com/BookStackApp/BookStack', 'Laravel monolithic web application', '["PHP","Laravel","Vue"]', '["Composer","npm"]', '["composer.json","composer.lock","package.json"]', 'Documentation and wiki web application.'),
+        ('discourse', 'Discourse', 'https://github.com/discourse/discourse', 'Rails web application', '["Ruby","Rails","Ember.js"]', '["Bundler","Yarn"]', '["Gemfile","Gemfile.lock","package.json"]', 'Open-source discussion platform.'),
+        ('gitea', 'Gitea', 'https://github.com/go-gitea/gitea', 'Go web application', '["Go","Vue"]', '["Go Modules","npm"]', '["go.mod","go.sum","package.json"]', 'Self-hosted Git service web application.'),
+        ('flasky', 'Flasky', 'https://github.com/miguelgrinberg/flasky', 'Flask monolithic web application', '["Python","Flask"]', '["pip"]', '["requirements.txt"]', 'Example Flask web application from Flask Web Development.'),
+        ('react-redux-realworld', 'RealWorld React', 'https://github.com/gothinkster/react-redux-realworld-example-app', 'Single-page React web application', '["React","Redux"]', '["npm"]', '["package.json","package-lock.json"]', 'RealWorld frontend implementation using React and Redux.'),
+        ('vue-realworld', 'RealWorld Vue', 'https://github.com/gothinkster/vue-realworld-example-app', 'Single-page Vue web application', '["Vue.js"]', '["npm"]', '["package.json","package-lock.json"]', 'RealWorld frontend implementation using Vue.'),
+        ('juice-shop', 'OWASP Juice Shop', 'https://github.com/juice-shop/juice-shop', 'Node.js/Angular web application', '["Node.js","Angular"]', '["npm"]', '["package.json","package-lock.json"]', 'Intentionally vulnerable web application for security training.')
+      ON CONFLICT (repository_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        github_url = EXCLUDED.github_url,
+        architecture_type = EXCLUDED.architecture_type,
+        tech_stack = EXCLUDED.tech_stack,
+        package_managers = EXCLUDED.package_managers,
+        expected_dependency_files = EXCLUDED.expected_dependency_files,
+        description = EXCLUDED.description,
+        updated_at = CURRENT_TIMESTAMP;
+    `);
+
+    await client.query(`
+      ALTER TABLE sbom_metadata
+        ADD COLUMN IF NOT EXISTS repository_id VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS source_commit VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS source_repository_url VARCHAR(500);
+    `);
+    await client.query(`
+      UPDATE sbom_repositories r
+      SET system_id = p.project_id
+      FROM cicd_pipelines p
+      WHERE lower(regexp_replace(p.repo_url, '\\.git/?$', '')) = lower(regexp_replace(r.github_url, '\\.git/?$', ''))
+        AND r.system_id IS NULL;
+    `);
+    await client.query(`
+      UPDATE sbom_metadata m
+      SET repository_id = r.repository_id,
+          source_repository_url = COALESCE(m.source_repository_url, r.github_url),
+          analyzed_at = COALESCE(m.analyzed_at, m.created_timestamp)
+      FROM sbom_repositories r
+      WHERE m.system_id = r.system_id AND m.repository_id IS NULL;
+    `);
     await client.query(`
       CREATE TABLE IF NOT EXISTS sbom_validation_runs (
         run_id VARCHAR(80) PRIMARY KEY,

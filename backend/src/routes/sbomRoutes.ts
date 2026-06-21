@@ -163,6 +163,8 @@ router.post('/generate', sbomController.generateFromGitHub);
  */
 router.get('/', sbomController.list);
 
+router.get('/:id/export', sbomController.exportCycloneDx);
+
 /**
  * @swagger
  * /api/sboms/{id}:

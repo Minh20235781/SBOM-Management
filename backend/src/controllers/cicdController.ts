@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { PoolClient } from 'pg';
 import { pool } from '../config/db';
 import { cicdService } from '../services/cicdService';
+import { githubActionsService } from '../services/githubActionsService';
 
 const parseId = (value: string | string[] | undefined) => {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -105,9 +106,12 @@ export const cicdController = {
     const pipelineId = parseId(req.params.pipelineId);
     if (!pipelineId) return res.status(400).json({ error: 'Invalid pipelineId' });
     await withTransaction(next, async client => {
-      const run = await cicdService.runPipeline(client, pipelineId, req.body || {});
+      const pipelineResult = await client.query('SELECT provider FROM cicd_pipelines WHERE pipeline_id = $1', [pipelineId]);
+      const run = pipelineResult.rows[0]?.provider === 'GITHUB_ACTIONS'
+        ? await githubActionsService.dispatch(client, pipelineId, req.body || {})
+        : await cicdService.runPipeline(client, pipelineId, req.body || {});
       if (!run) return res.status(404).json({ error: 'Pipeline not found' });
-      res.status(201).json(run);
+      res.status(pipelineResult.rows[0]?.provider === 'GITHUB_ACTIONS' ? 202 : 201).json(run);
     });
   },
 
@@ -126,6 +130,61 @@ export const cicdController = {
     if (!runId) return res.status(400).json({ error: 'Invalid runId' });
     await withClient(next, async client => {
       res.json(await cicdService.getRunSteps(client, runId));
+    });
+  },
+
+  dispatchGitHub: async (req: Request, res: Response, next: NextFunction) => {
+    const pipelineId = parseId(req.params.pipelineId);
+    if (!pipelineId) return res.status(400).json({ error: 'Invalid pipelineId' });
+    await withTransaction(next, async client => {
+      const run = await githubActionsService.dispatch(client, pipelineId, req.body || {});
+      if (!run) return res.status(404).json({ error: 'Pipeline not found' });
+      res.status(202).json(run);
+    });
+  },
+
+  githubWebhook: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+      const signature = req.header('x-hub-signature-256');
+      if (!githubActionsService.verifyWebhookSignature(rawBody, signature)) {
+        return res.status(401).json({ error: 'Invalid GitHub webhook signature' });
+      }
+      await withTransaction(next, async client => {
+        const result = await githubActionsService.handleWebhook(
+          client,
+          req.header('x-github-event') || 'unknown',
+          req.header('x-github-delivery') || undefined,
+          req.body || {}
+        );
+        res.json(result);
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  receiveGitHubResult: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!githubActionsService.verifyPipelineToken(req.header('authorization') || undefined)) {
+        return res.status(401).json({ error: 'Invalid pipeline token' });
+      }
+      await withTransaction(next, async client => {
+        res.status(201).json(await githubActionsService.receiveResult(client, req.body || {}));
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  monitoring: async (req: Request, res: Response, next: NextFunction) => {
+    const rawProjectId = Array.isArray(req.query.projectId) ? req.query.projectId[0] : req.query.projectId;
+    const projectId = rawProjectId ? Number(rawProjectId) : null;
+    if (rawProjectId && (!Number.isInteger(projectId) || Number(projectId) <= 0)) {
+      return res.status(400).json({ error: 'Invalid projectId' });
+    }
+    await withClient(next, async client => {
+      res.json(await githubActionsService.monitoring(client, projectId));
     });
   },
 };
