@@ -1,0 +1,61 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:f4cb74a6-e927-4485-8c96-fca137dbd3bc",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-20T13:09:04+07:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "author": "anchore",
+          "name": "syft",
+          "version": "1.45.1"
+        }
+      ]
+    },
+    "component": {
+      "bom-ref": "3c6ade619b6bb25c",
+      "type": "file",
+      "name": "C:\\Users\\DGC\\SBOM-Management\\backend\\.sbom-validation\\sources\\flasky"
+    },
+    "authors": [
+      {
+        "name": "Miguel Grinberg <miguel.grinberg@gmail.com>"
+      }
+    ],
+    "properties": [
+      {
+        "name": "devops.lifecycle.phase",
+        "value": "Release"
+      },
+      {
+        "name": "devops.lifecycle.phase.source",
+        "value": "release tag/context"
+      },
+      {
+        "name": "metadata.authors.source",
+        "value": "git log commit authors"
+      },
+      {
+        "name": "metadata.services.source",
+        "value": "docker-compose services"
+      }
+    ],
+    "lifecycle_phase": "Release"
+  },
+  "services": [
+    {
+      "name": "flasky"
+    },
+    {
+      "name": "links"
+    },
+    {
+      "name": "mysql"
+    }
+  ],
+  "lifecycle_phase": "Release"
+}

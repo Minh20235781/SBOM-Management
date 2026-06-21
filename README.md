@@ -212,35 +212,23 @@ npm test
 
 ## Demo Trang Kiểm Chứng SBOM
 
-Flow chính:
+Kịch bản 1 — service mới chưa có SBOM:
 
-1. Mở trang `Kiểm chứng SBOM`.
-2. Chọn một repository web thật trong danh sách.
-3. Tải file SBOM CycloneDX JSON tương ứng từ máy lên, ví dụ file đã generate trước đó.
-4. Bấm `Analyze Source`.
-   - Backend clone hoặc update repository thật.
-   - Phát hiện dependency files.
-   - Chạy Syft để phân tích source.
-   - Dựng metadata, component, dependency và graph.
-5. Bấm `Verify SBOM`.
-   - Backend phân tích lại source thật.
-   - So sánh source components với SBOM upload.
-   - Trả về matched, missing, extra, version mismatch và Trust Score.
-6. Xem `Báo cáo kiểm chứng` và `Báo cáo kiểm thử`.
+1. Chọn repository trong catalog 10 repository thật.
+2. Bấm `Analyze Source`: backend clone source, ghi nhận HEAD commit, dò SBOM có sẵn trong source tree, phát hiện manifest, chạy Syft, suy luận metadata và dựng graph.
+3. Chỉ khi không phát hiện CycloneDX/SPDX JSON dùng được trong repository, hệ thống mới xác định đây là service chưa có SBOM.
+4. Xem `View Detected Dependencies`, `View Dependency Graph` và bảng component.
+5. Bấm `Confirm Analysis`, sau đó `Generate SBOM`.
+6. CycloneDX JSON được lưu cùng repository, service, `source_commit` và `analyzed_at`.
 
-Demo phát hiện lỗi:
+Kịch bản 2 — service đã có SBOM và source có thể đã thay đổi:
 
-1. Sau khi upload SBOM, dùng các thao tác trong card `SBOM tải lên từ máy`:
-   - `Xóa khỏi SBOM`
-   - `Sửa version`
-   - `Thêm vào SBOM`
-2. Bấm `Verify SBOM` để kiểm chứng bản SBOM đã chỉnh.
-3. Hoặc bấm `Create Faulty SBOM Demo` để hệ thống tự tạo bản lỗi gồm:
-   - Xóa một component thật.
-   - Thêm `fake-lib-demo@9.9.9`.
-   - Sửa version một component thật.
-4. Bấm `Verify Faulty SBOM`.
-5. Kiểm tra báo cáo có `MISSING_IN_SBOM`, `EXTRA_IN_SBOM`, `VERSION_MISMATCH` và Trust Score giảm.
+1. Chọn repository rồi bấm `Analyze Source`.
+2. Nếu source tree chứa `sbom.json`, `bom.json`, CycloneDX/SPDX JSON hoặc tên file SBOM tương đương, hệ thống tự nhận diện file và chuyển sang kịch bản 2.
+3. Bấm `Verify Current SBOM`. Backend dùng chính SBOM trong repository và kết quả Syft của source hiện tại để đối chiếu.
+4. Xem `MATCHED`, `MISSING_IN_SBOM`, `EXTRA_IN_SBOM`, `VERSION_MISMATCH`, Trust Score và source evidence.
+5. Nếu SBOM có property commit/revision và khác HEAD, UI cảnh báo `Source code may have changed since SBOM generation`.
+6. Nếu báo cáo kết luận `SBOM needs update`, xác nhận phân tích mới và bấm `Regenerate SBOM`.
 
 Trust Score được tính theo công thức:
 
@@ -301,6 +289,7 @@ Validation scenarios:
 
 - `GET /api/validation-scenarios`
 - `POST /api/validation-scenarios/:scenarioId/analyze`
+- `POST /api/validation-scenarios/:scenarioId/verify-current`
 - `POST /api/validation-scenarios/runs/:runId/confirm`
 - `POST /api/validation-scenarios/runs/:runId/generate`
 - `POST /api/validation-scenarios/runs/:runId/faulty`

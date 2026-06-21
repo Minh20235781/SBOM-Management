@@ -59,6 +59,7 @@ router.get('/', validationScenarioController_1.validationScenarioController.list
  *         description: Server error
  */
 router.post('/:scenarioId/analyze', validationScenarioController_1.validationScenarioController.analyze);
+router.post('/:scenarioId/verify-current', validationScenarioController_1.validationScenarioController.verifyCurrent);
 /**
  * @swagger
  * /api/validation-scenarios/runs/{runId}:

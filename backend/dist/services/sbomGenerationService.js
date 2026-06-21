@@ -20,15 +20,22 @@ exports.sbomGenerationService = {
         const workDir = await sourceCloneService_1.sourceCloneService.ensureWorkDir();
         const cacheDir = path_1.default.join(workDir, 'cache');
         await promises_1.default.mkdir(cacheDir, { recursive: true });
-        const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], {
-            timeout: TIMEOUT_MS,
-            maxBuffer: MAX_BUFFER,
-            env: {
-                ...process.env,
-                XDG_CACHE_HOME: process.env.XDG_CACHE_HOME || cacheDir,
-                SYFT_CHECK_FOR_APP_UPDATE: 'false',
-            },
-        });
+        let stdout;
+        try {
+            ({ stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], {
+                timeout: TIMEOUT_MS,
+                maxBuffer: MAX_BUFFER,
+                env: {
+                    ...process.env,
+                    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME || cacheDir,
+                    SYFT_CHECK_FOR_APP_UPDATE: 'false',
+                },
+            }));
+        }
+        catch (error) {
+            const detail = String(error?.stderr || error?.message || '').trim();
+            throw new Error(`SYFT_ANALYSIS_FAILED: Syft could not analyze this source tree. ${detail}`);
+        }
         const analysisDurationMs = Date.now() - started;
         const sbom = JSON.parse(stdout);
         const outputDir = path_1.default.join(workDir, outputRootName);

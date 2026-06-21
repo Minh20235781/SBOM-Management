@@ -255,3 +255,24 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background-color .15s, border-color .15s, opacity .15s;
+}
+.btn-primary { border-color: #2563eb; background: #2563eb; color: white; }
+.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+.btn-secondary { border-color: #cbd5e1; background: white; color: #334155; }
+.btn-secondary:hover:not(:disabled) { background: #f8fafc; }
+.btn-primary:disabled,
+.btn-secondary:disabled { cursor: not-allowed; opacity: .45; }

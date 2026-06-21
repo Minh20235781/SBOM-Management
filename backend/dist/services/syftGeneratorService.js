@@ -11,6 +11,8 @@ const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const uuid_1 = require("uuid");
 const metadataInferenceService_1 = require("./metadataInferenceService");
+const repositorySbomDetectorService_1 = require("./repositorySbomDetectorService");
+const sourceCloneService_1 = require("./sourceCloneService");
 const execFilePromise = util_1.default.promisify(child_process_1.execFile);
 const MAX_BUFFER = 50 * 1024 * 1024;
 const TIMEOUT_MS = Number(process.env.SYFT_TIMEOUT_MS || 120000);
@@ -47,18 +49,22 @@ const generateSbomFromGitHubRepo = async (repoUrl) => {
     const repoPath = path_1.default.join(tempRoot, 'repo');
     try {
         await promises_1.default.mkdir(tempRoot, { recursive: true });
-        const gitBin = process.env.GIT_BIN || 'git';
-        await execFilePromise(gitBin, ['-c', 'core.longpaths=true', 'clone', '--depth', '1', normalizedRepoUrl, repoPath], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
-        const syftBin = process.env.SYFT_BIN || 'syft';
-        const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
-        const sbom = JSON.parse(stdout);
+        await sourceCloneService_1.sourceCloneService.cloneInto(normalizedRepoUrl, repoPath);
+        const repositorySbom = await repositorySbomDetectorService_1.repositorySbomDetectorService.detect(repoPath);
         const inferredMetadata = await metadataInferenceService_1.metadataInferenceService.infer(repoPath, {
             repoUrl: normalizedRepoUrl,
             repoName,
             context: 'manual',
         });
+        if (repositorySbom.usableForVerification && repositorySbom.selectedPath) {
+            const sbom = JSON.parse(await promises_1.default.readFile(repositorySbom.selectedPath, 'utf8'));
+            return { sbom, normalizedRepoUrl, repoName, inferredMetadata, sbomOrigin: 'SOURCE_REPOSITORY', repositorySbom };
+        }
+        const syftBin = process.env.SYFT_BIN || 'syft';
+        const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
+        const sbom = JSON.parse(stdout);
         const enrichedSbom = metadataInferenceService_1.metadataInferenceService.injectIntoCycloneDx(sbom, inferredMetadata);
-        return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata };
+        return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata, sbomOrigin: 'GENERATED_BY_SYFT', repositorySbom };
     }
     catch (error) {
         const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';

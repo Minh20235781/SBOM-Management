@@ -2,89 +2,34 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.repositoryCatalogService = void 0;
 const db_1 = require("../config/db");
-const normalizeGitHubUrl = (value) => value.trim().replace(/\.git$/i, '');
-const inferDependencyFiles = (ecosystem) => {
-    const value = String(ecosystem || '').toLowerCase();
-    if (value.includes('maven') || value.includes('java'))
-        return ['pom.xml'];
-    if (value.includes('python') || value.includes('pypi'))
-        return ['requirements.txt', 'pyproject.toml'];
-    if (value.includes('go'))
-        return ['go.mod'];
-    if (value.includes('composer') || value.includes('php'))
-        return ['composer.json'];
-    if (value.includes('ruby') || value.includes('gem'))
-        return ['Gemfile'];
-    return ['package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'];
-};
-const toRepository = (row) => {
-    const repoUrl = normalizeGitHubUrl(row.repo_url || '');
-    const ecosystem = row.ecosystem || '';
+const sbomStatusService_1 = require("./sbomStatusService");
+const toRepository = async (row) => {
+    const status = await sbomStatusService_1.sbomStatusService.forRepository(row.repository_id);
     return {
-        id: `project-${row.system_id}`,
-        systemId: Number(row.system_id),
-        pipelineId: row.pipeline_id ? Number(row.pipeline_id) : null,
+        id: row.repository_id,
+        systemId: row.system_id ? Number(row.system_id) : null,
         projectName: row.name,
-        githubUrl: repoUrl,
+        githubUrl: String(row.github_url).replace(/\.git$/i, ''),
         applicationType: 'Web Application',
         repoScope: 'Single Repository',
-        architectureType: row.description || 'Saved project repository',
-        techStack: ecosystem ? [ecosystem] : [],
-        packageManager: ecosystem ? [ecosystem] : [],
-        dependencyFiles: inferDependencyFiles(ecosystem),
-        description: row.description || `Repository saved for project ${row.name}.`,
-        supportStatus: 'Saved in SBOM Management system',
+        architectureType: row.architecture_type,
+        techStack: row.tech_stack || [],
+        packageManager: row.package_managers || [],
+        dependencyFiles: row.expected_dependency_files || [],
+        description: row.description || '',
+        supportStatus: 'Ready for source-based SBOM analysis',
+        ...status,
     };
 };
-const projectRepositoryQuery = `
-  SELECT
-    s.system_id,
-    s.name,
-    s.description,
-    p.pipeline_id,
-    p.repo_url,
-    component_stats.ecosystem
-  FROM system s
-  JOIN LATERAL (
-    SELECT pipeline_id, repo_url
-    FROM cicd_pipelines
-    WHERE project_id = s.system_id
-      AND repo_url IS NOT NULL
-      AND btrim(repo_url) <> ''
-    ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, pipeline_id DESC
-    LIMIT 1
-  ) p ON true
-  LEFT JOIN LATERAL (
-    SELECT
-      CASE
-        WHEN c.purl LIKE 'pkg:%/%' THEN split_part(split_part(c.purl, ':', 2), '/', 1)
-        ELSE NULL
-      END AS ecosystem
-    FROM sbom_metadata m
-    JOIN component c ON c.sbom_id = m.sbom_id
-    WHERE m.system_id = s.system_id
-    ORDER BY m.created_timestamp DESC NULLS LAST
-    LIMIT 1
-  ) component_stats ON true
-`;
 exports.repositoryCatalogService = {
     list: async () => {
-        const { rows } = await db_1.pool.query(`
-      ${projectRepositoryQuery}
-      ORDER BY s.name ASC
-    `);
-        return rows.map(toRepository);
+        const { rows } = await db_1.pool.query('SELECT * FROM sbom_repositories ORDER BY name');
+        return Promise.all(rows.map(toRepository));
     },
     getById: async (id) => {
-        const match = /^project-(\d+)$/.exec(id);
-        if (!match)
-            throw new Error(`Unknown validation project: ${id}`);
-        const { rows } = await db_1.pool.query(`${projectRepositoryQuery}
-       WHERE s.system_id = $1
-       LIMIT 1`, [Number(match[1])]);
-        if (!rows[0]) {
-            throw new Error(`Validation project not found or has no repository URL: ${id}`);
-        }
+        const { rows } = await db_1.pool.query('SELECT * FROM sbom_repositories WHERE repository_id = $1', [id]);
+        if (!rows[0])
+            throw new Error(`Repository demo not found: ${id}`);
         return toRepository(rows[0]);
     },
 };
