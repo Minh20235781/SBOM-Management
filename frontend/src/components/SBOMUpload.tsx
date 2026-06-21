@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   CheckCircle2,
   Download,
   FileCode,
@@ -33,9 +32,6 @@ type RepoAnalysis = {
   sbomSizeBytes: number;
   analysisDurationMs: number;
   inferredMetadata?: InferredMetadata | null;
-  sbomOrigin?: 'SOURCE_REPOSITORY' | 'GENERATED_BY_SYFT';
-  existingSbomDetected?: boolean;
-  detectedSbomFile?: { path: string; format: string; componentCount: number; sizeBytes: number } | null;
 };
 
 type InferredField = {
@@ -206,9 +202,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
       updateSession({
         pendingSbom: json.sbom,
         repoAnalysis: json.analysis,
-        saveMsg: json.analysis?.existingSbomDetected
-          ? `Đã nhận diện SBOM có sẵn trong repository: ${json.analysis.detectedSbomFile?.path || 'SBOM file'}.`
-          : 'Đã phân tích repository. Không tìm thấy SBOM có sẵn; hãy xác nhận để sinh SBOM bằng Syft.',
+        saveMsg: 'Đã phân tích repository. Vui lòng kiểm tra thông tin rồi xác nhận để sinh SBOM.',
       });
     } catch (err: unknown) {
       updateSession({ saveMsg: err instanceof Error ? err.message : 'Phân tích SBOM thất bại' });
@@ -307,7 +301,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
             <div className="text-center">
               <p className="text-lg font-medium text-slate-800">Phân tích SBOM từ GitHub</p>
               <p className="text-sm text-slate-500">
-                Backend clone repository, dò SBOM có sẵn trước; chỉ chạy Syft để sinh mới khi repository chưa có SBOM dùng được.
+                Backend clone repository và chạy Syft. SBOM chỉ được lưu/tải sau khi bạn xác nhận kết quả phân tích.
               </p>
             </div>
             <div>
@@ -321,18 +315,6 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
             </div>
             {repoAnalysis && (
               <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-left">
-                {repoAnalysis.existingSbomDetected ? (
-                  <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                    <p className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Repository đã có SBOM</p>
-                    <p className="mt-1 font-mono text-xs">{repoAnalysis.detectedSbomFile?.path} · {repoAnalysis.detectedSbomFile?.format} · {repoAnalysis.detectedSbomFile?.componentCount ?? 0} components</p>
-                    <p className="mt-1 text-xs">Kết quả được đọc từ chính SBOM trong source, không phải SBOM vừa generate bởi Syft.</p>
-                  </div>
-                ) : (
-                  <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                    <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" />Không tìm thấy SBOM có sẵn trong repository</p>
-                    <p className="mt-1 text-xs">Đã quét source tree nhưng không có CycloneDX/SPDX hợp lệ. Kết quả bên dưới được Syft phân tích từ source hiện tại; hãy xác nhận nếu muốn generate SBOM mới.</p>
-                  </div>
-                )}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-slate-900">Kết quả phân tích tạm thời</p>

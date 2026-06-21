@@ -9,7 +9,6 @@ import SbomSnapshots from './components/SbomSnapshots';
 import SystemSbomDetail from './components/SystemSbomDetail';
 import DeveloperCicd from './components/DeveloperCicd';
 import SbomValidationScenarios from './components/SbomValidationScenarios';
-import CicdMonitoring from './components/CicdMonitoring';
 import { API_BASE } from './api';
 import { type SBOMComponent, type BackendVulnerability, type Dependency, type SBOMMetadata } from './types/sbom';
 import { 
@@ -616,11 +615,7 @@ function App() {
               <DeveloperCicd systems={systems} refreshSystems={fetchSystems} />
             )}
 
-            {activeMenu === 'monitoring' && (
-              <CicdMonitoring systems={systems} />
-            )}
-
-            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'validation-scenarios' && activeMenu !== 'pipeline' && activeMenu !== 'monitoring' && (
+            {activeMenu !== 'dashboard' && activeMenu !== 'upload' && activeMenu !== 'system' && activeMenu !== 'system-detail' && activeMenu !== 'history' && activeMenu !== 'validation-scenarios' && activeMenu !== 'pipeline' && (
               <div className="flex flex-col items-center justify-center p-20 text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm">
                 <Activity className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium text-slate-600">Đang phát triển tính năng này</p>

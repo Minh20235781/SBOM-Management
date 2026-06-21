@@ -1,9 +1,9 @@
 import { pool } from '../config/db';
-import { sbomStatusService } from './sbomStatusService';
 
 export type ValidationScenarioRepository = {
   id: string;
-  systemId?: number | null;
+  systemId?: number;
+  pipelineId?: number | null;
   projectName: string;
   githubUrl: string;
   applicationType: 'Web Application';
@@ -14,40 +14,94 @@ export type ValidationScenarioRepository = {
   dependencyFiles: string[];
   description: string;
   supportStatus: string;
-  sbomStatus: string;
-  latestSbomId?: string | null;
-  sourceCommit?: string | null;
-  analyzedAt?: string | null;
 };
 
-const toRepository = async (row: any): Promise<ValidationScenarioRepository> => {
-  const status = await sbomStatusService.forRepository(row.repository_id);
+const normalizeGitHubUrl = (value: string) => value.trim().replace(/\.git$/i, '');
+
+const inferDependencyFiles = (ecosystem?: string | null) => {
+  const value = String(ecosystem || '').toLowerCase();
+  if (value.includes('maven') || value.includes('java')) return ['pom.xml'];
+  if (value.includes('python') || value.includes('pypi')) return ['requirements.txt', 'pyproject.toml'];
+  if (value.includes('go')) return ['go.mod'];
+  if (value.includes('composer') || value.includes('php')) return ['composer.json'];
+  if (value.includes('ruby') || value.includes('gem')) return ['Gemfile'];
+  return ['package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'];
+};
+
+const toRepository = (row: any): ValidationScenarioRepository => {
+  const repoUrl = normalizeGitHubUrl(row.repo_url || '');
+  const ecosystem = row.ecosystem || '';
   return {
-    id: row.repository_id,
-    systemId: row.system_id ? Number(row.system_id) : null,
+    id: `project-${row.system_id}`,
+    systemId: Number(row.system_id),
+    pipelineId: row.pipeline_id ? Number(row.pipeline_id) : null,
     projectName: row.name,
-    githubUrl: String(row.github_url).replace(/\.git$/i, ''),
+    githubUrl: repoUrl,
     applicationType: 'Web Application',
     repoScope: 'Single Repository',
-    architectureType: row.architecture_type,
-    techStack: row.tech_stack || [],
-    packageManager: row.package_managers || [],
-    dependencyFiles: row.expected_dependency_files || [],
-    description: row.description || '',
-    supportStatus: 'Ready for source-based SBOM analysis',
-    ...status,
+    architectureType: row.description || 'Saved project repository',
+    techStack: ecosystem ? [ecosystem] : [],
+    packageManager: ecosystem ? [ecosystem] : [],
+    dependencyFiles: inferDependencyFiles(ecosystem),
+    description: row.description || `Repository saved for project ${row.name}.`,
+    supportStatus: 'Saved in SBOM Management system',
   };
 };
 
+const projectRepositoryQuery = `
+  SELECT
+    s.system_id,
+    s.name,
+    s.description,
+    p.pipeline_id,
+    p.repo_url,
+    component_stats.ecosystem
+  FROM system s
+  JOIN LATERAL (
+    SELECT pipeline_id, repo_url
+    FROM cicd_pipelines
+    WHERE project_id = s.system_id
+      AND repo_url IS NOT NULL
+      AND btrim(repo_url) <> ''
+    ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, pipeline_id DESC
+    LIMIT 1
+  ) p ON true
+  LEFT JOIN LATERAL (
+    SELECT
+      CASE
+        WHEN c.purl LIKE 'pkg:%/%' THEN split_part(split_part(c.purl, ':', 2), '/', 1)
+        ELSE NULL
+      END AS ecosystem
+    FROM sbom_metadata m
+    JOIN component c ON c.sbom_id = m.sbom_id
+    WHERE m.system_id = s.system_id
+    ORDER BY m.created_timestamp DESC NULLS LAST
+    LIMIT 1
+  ) component_stats ON true
+`;
+
 export const repositoryCatalogService = {
   list: async () => {
-    const { rows } = await pool.query('SELECT * FROM sbom_repositories ORDER BY name');
-    return Promise.all(rows.map(toRepository));
+    const { rows } = await pool.query(`
+      ${projectRepositoryQuery}
+      ORDER BY s.name ASC
+    `);
+    return rows.map(toRepository);
   },
 
   getById: async (id: string) => {
-    const { rows } = await pool.query('SELECT * FROM sbom_repositories WHERE repository_id = $1', [id]);
-    if (!rows[0]) throw new Error(`Repository demo not found: ${id}`);
+    const match = /^project-(\d+)$/.exec(id);
+    if (!match) throw new Error(`Unknown validation project: ${id}`);
+
+    const { rows } = await pool.query(
+      `${projectRepositoryQuery}
+       WHERE s.system_id = $1
+       LIMIT 1`,
+      [Number(match[1])]
+    );
+    if (!rows[0]) {
+      throw new Error(`Validation project not found or has no repository URL: ${id}`);
+    }
     return toRepository(rows[0]);
   },
 };

@@ -1,272 +1,1284 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Circle, ExternalLink, FileCode2,
-  Network, Package, Play, RefreshCw, Search, ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  Eye,
+  FileJson,
+  GitBranch,
+  Network,
+  Play,
+  RefreshCw,
+  ShieldCheck,
+  TestTube2,
+  TriangleAlert,
 } from 'lucide-react';
 import { API_BASE_URL } from '../api';
-import SbomDependencyGraph from './SbomDependencyGraph';
-import type { SbomGraphResponse } from '../types/sbom';
 
-type Repo = {
-  id: string; projectName: string; githubUrl: string; applicationType: string;
-  repoScope: string; architectureType: string; techStack: string[];
-  packageManager: string[]; dependencyFiles: string[]; description: string;
-  sbomStatus: string;
-  latestSbomId?: string | null; sourceCommit?: string | null; analyzedAt?: string | null;
+const API_BASE = API_BASE_URL;
+
+type ScenarioRepo = {
+  id: string;
+  projectName: string;
+  githubUrl: string;
+  applicationType: 'Web Application';
+  repoScope: 'Single Repository';
+  architectureType: string;
+  techStack: string[];
+  packageManager: string[];
+  dependencyFiles: string[];
+  description: string;
+  supportStatus: string;
 };
+
 type Analysis = {
-  runId: string; projectName: string; githubUrl: string; sourceCommit: string;
-  shortCommit: string; branch: string; commitTimestamp: string; analyzedAt: string;
+  runId: string;
+  projectName: string;
+  githubUrl: string;
+  applicationType: string;
+  repoScope: string;
+  architectureType: string;
   dependencyFiles: Array<{ path: string; name: string; sizeBytes: number }>;
-  componentCount: number; dependencyCount: number; ecosystems: string[];
-  analysisDurationMs: number; toolInfo: string; confirmed?: boolean;
-  components: Array<{ name: string; version?: string | null; type: string; purl?: string | null }>;
-  inferredMetadata?: Record<string, { value: string | string[]; source: string; confidence: string; reason?: string }>;
-  workflowScenario: 'SERVICE_HAS_SBOM' | 'SERVICE_WITHOUT_SBOM';
-  repositorySbom: {
-    detected: boolean; usableForVerification: boolean;
-    selectedFile?: { path: string; format: string; sizeBytes: number; componentCount: number; sourceCommit?: string | null } | null;
-    files: Array<{ path: string; format: string; sizeBytes: number; parseable: boolean; componentCount: number }>;
-  };
+  dependencyFileCount: number;
+  componentCount: number;
+  dependencyCount: number;
+  ecosystems: string[];
+  analysisDurationMs: number;
+  sbomSizeBytes: number;
+  sbomId: string;
+  sbomPath: string;
+  toolInfo: string;
+  createdTimestamp: string;
+  inferredMetadata?: InferredMetadata | null;
+  confirmed?: boolean;
 };
+
+type InferredField = {
+  value: string | string[];
+  source: string;
+  confidence: 'high' | 'medium' | 'low';
+  reason?: string;
+  suggestions?: string[];
+};
+
+type InferredMetadata = {
+  authors: InferredField;
+  services: InferredField;
+  lifecyclePhase: InferredField;
+};
+
 type Graph = {
   nodes: Array<{ id: string; label: string; type: string; ecosystem: string }>;
-  edges: Array<{ id: string; source: string; target: string }>;
+  edges: Array<{ id: string; source: string; target: string; relationship: string }>;
   summary: { nodeCount: number; edgeCount: number };
 };
-type Verification = {
-  status: 'PASS' | 'FAIL'; trustScore: number; trustLevel: string;
-  matchedCount: number; missingCount: number; extraCount: number; versionMismatchCount: number;
-  sourceComponentCount: number; sbomComponentCount: number;
-  MATCHED: string[]; MISSING_IN_SBOM: string[]; EXTRA_IN_SBOM: string[];
-  VERSION_MISMATCH: Array<{ component: string; sourceVersion?: string; sbomVersion?: string; ecosystem: string }>;
-  sbomSourceCommit?: string | null; currentCommit?: string | null; verifiedAt?: string;
-  sourceChangedSinceGeneration?: boolean; recommendation?: string;
+
+type VerificationReport = {
+  status: 'PASS' | 'FAIL';
+  trustLevel: string;
+  trustScore: number;
+  matchedCount: number;
+  missingCount: number;
+  extraCount: number;
+  versionMismatchCount: number;
+  sourceComponentCount: number;
+  sbomComponentCount: number;
+  MATCHED: string[];
+  MISSING_IN_SBOM: string[];
+  EXTRA_IN_SBOM: string[];
+  VERSION_MISMATCH: Array<{ component: string; sourceVersion?: string | null; sbomVersion?: string | null; ecosystem: string }>;
 };
 
-const api = (path: string) => `${API_BASE_URL}${path}`;
-const errorMessage = async (response: Response) => {
-  const body = await response.json().catch(() => ({}));
-  const prefix: Record<string, string> = {
-    SOURCE_CLONE_FAILED: 'Không thể tải source repository',
-    SYFT_ANALYSIS_FAILED: 'Syft phân tích thất bại',
-    DEPENDENCY_FILES_NOT_FOUND: 'Không tìm thấy dependency file được hỗ trợ',
-    CURRENT_SBOM_NOT_FOUND: 'Repository chưa có SBOM đang lưu',
-  };
-  return `${prefix[body.code] || 'Thao tác thất bại'}: ${body.message || response.statusText}`;
+type TestReport = {
+  testCaseId: string;
+  name: string;
+  scope: string;
+  applicationType: string;
+  repoScope: string;
+  architectureType: string;
+  inputRepo: string;
+  preconditions: string[];
+  steps: string[];
+  expectedResult: string;
+  actualResult: string;
+  result: 'PASS' | 'FAIL';
+  evidence: Record<string, unknown>;
 };
-const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('vi-VN') : '—';
-const short = (value?: string | null) => value ? value.slice(0, 8) : '—';
-const statusClass = (status: string) => status.includes('Chưa')
-  ? 'border-slate-200 bg-slate-50 text-slate-700'
-  : status.includes('Đã') ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    : 'border-amber-200 bg-amber-50 text-amber-800';
 
-const toVisualGraph = (graph: Graph | null): SbomGraphResponse | null => {
-  if (!graph) return null;
-  const depthById = new Map<string, number>();
-  const incoming = new Set(graph.edges.map(edge => edge.target));
-  const roots = graph.nodes.filter(node => !incoming.has(node.id));
-  roots.forEach(node => depthById.set(node.id, 0));
-  for (let pass = 0; pass < graph.nodes.length; pass += 1) {
-    graph.edges.forEach(edge => {
-      const sourceDepth = depthById.get(edge.source);
-      if (sourceDepth !== undefined && depthById.get(edge.target) === undefined) depthById.set(edge.target, sourceDepth + 1);
-    });
+type UploadedSbom = {
+  fileName: string;
+  sbom: any;
+  componentCount: number;
+  dependencyCount: number;
+  changes: string[];
+};
+
+type StepAction = {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  primary?: boolean;
+  warning?: boolean;
+  helper?: string;
+};
+
+type StepGroup = {
+  title: string;
+  description: string;
+  actions: StepAction[];
+};
+
+const badge = 'inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold';
+const scopeBadge = `${badge} border-blue-100 bg-blue-50 text-blue-700`;
+const repoBadge = `${badge} border-emerald-100 bg-emerald-50 text-emerald-700`;
+const mutedBadge = `${badge} border-slate-200 bg-slate-50 text-slate-600`;
+
+const applicationTypeLabels: Record<string, string> = {
+  'Web Application': 'Ứng dụng web',
+};
+
+const repoScopeLabels: Record<string, string> = {
+  'Single Repository': 'Một kho lưu trữ',
+};
+
+const supportStatusLabels: Record<string, string> = {
+  'Supported for SBOM validation demo': 'Sẵn sàng cho demo kiểm chứng',
+};
+
+const architectureLabels: Record<string, string> = {
+  'Monolithic Spring Boot web application': 'Ứng dụng web Spring Boot nguyên khối',
+  'Node.js CMS web application': 'Ứng dụng web CMS Node.js',
+  'Node.js forum web application': 'Ứng dụng web diễn đàn Node.js',
+  'Laravel monolithic web application': 'Ứng dụng web Laravel nguyên khối',
+  'Rails web application': 'Ứng dụng web Rails',
+  'Go web application': 'Ứng dụng web Go',
+  'Flask monolithic web application': 'Ứng dụng web Flask nguyên khối',
+  'Single-page React web application': 'Ứng dụng web React một trang',
+  'Single-page Vue web application': 'Ứng dụng web Vue một trang',
+  'Node.js/Angular web application': 'Ứng dụng web Node.js/Angular',
+};
+
+const descriptionLabels: Record<string, string> = {
+  'Reference Spring Boot web application used for PetClinic demos.': 'Ứng dụng web Spring Boot tham chiếu dùng cho demo PetClinic.',
+  'Open-source publishing and CMS platform.': 'Nền tảng xuất bản và CMS mã nguồn mở.',
+  'Modern web forum software built on Node.js.': 'Phần mềm diễn đàn web hiện đại xây dựng trên Node.js.',
+  'Documentation and wiki web application.': 'Ứng dụng web tài liệu và wiki.',
+  'Open-source discussion platform.': 'Nền tảng thảo luận mã nguồn mở.',
+  'Self-hosted Git service web application.': 'Ứng dụng web dịch vụ Git tự lưu trữ.',
+  'Example Flask web application from Flask Web Development.': 'Ví dụ ứng dụng web Flask từ Flask Web Development.',
+  'RealWorld frontend implementation using React and Redux.': 'Triển khai frontend RealWorld bằng React và Redux.',
+  'RealWorld frontend implementation using Vue.': 'Triển khai frontend RealWorld bằng Vue.',
+  'Intentionally vulnerable web application for security training.': 'Ứng dụng web cố ý có lỗ hổng để huấn luyện bảo mật.',
+};
+
+const reportTextLabels: Record<string, string> = {
+  'SBOM validation demo for real Web Application source code in one GitHub repository.': 'Demo kiểm chứng SBOM cho mã nguồn ứng dụng web thực tế trong một kho GitHub.',
+  'Git is available on backend host.': 'Git có sẵn trên máy chủ backend.',
+  'Syft is available on backend host.': 'Syft có sẵn trên máy chủ backend.',
+  'Repository is public and cloneable.': 'Kho lưu trữ công khai và có thể sao chép.',
+  'Current version supports Web Application + Single Repository only.': 'Phiên bản hiện tại chỉ hỗ trợ Ứng dụng web + Một kho lưu trữ.',
+  'Select the real GitHub repository from SBOM Validation Scenarios.': 'Chọn kho GitHub thực tế từ trang Kiểm chứng SBOM.',
+  'Clone or update the selected Single Repository source.': 'Sao chép hoặc cập nhật mã nguồn của kho đã chọn.',
+  'Detect dependency files in the source tree.': 'Phát hiện các file phụ thuộc trong cây mã nguồn.',
+  'Run Syft and parse CycloneDX JSON.': 'Chạy Syft và phân tích JSON CycloneDX.',
+  'Persist metadata, components, and dependency relationships.': 'Lưu metadata, thành phần và quan hệ phụ thuộc.',
+  'Confirm analysis before generating downloadable SBOM.': 'Xác nhận phân tích trước khi tạo SBOM có thể tải xuống.',
+  'Verify the SBOM by regenerating source analysis and comparing components.': 'Kiểm chứng SBOM bằng cách phân tích lại source thật và so sánh thành phần.',
+  'SBOM is generated from the real repository and verification reports MATCHED, MISSING_IN_SBOM, EXTRA_IN_SBOM, VERSION_MISMATCH, counts, and Trust Score.': 'SBOM được tạo từ kho thật và báo cáo kiểm chứng hiển thị MATCHED, MISSING_IN_SBOM, EXTRA_IN_SBOM, VERSION_MISMATCH, số lượng và Trust Score.',
+  'Verification has not been run yet.': 'Chưa chạy kiểm chứng.',
+};
+
+const translateTestReportName = (value: string) => {
+  const prefix = 'Validate CycloneDX SBOM against real repository ';
+  return value.startsWith(prefix) ? `Kiểm chứng SBOM CycloneDX với kho thật ${value.slice(prefix.length)}` : value;
+};
+
+const translateText = (value: string) =>
+  reportTextLabels[value]
+  || descriptionLabels[value]
+  || architectureLabels[value]
+  || supportStatusLabels[value]
+  || applicationTypeLabels[value]
+  || repoScopeLabels[value]
+  || value;
+
+const translateActualResult = (value: string) => {
+  const prefix = 'Verification finished with ';
+  return value.startsWith(prefix) ? `Kiểm chứng hoàn tất với ${value.slice(prefix.length)}` : translateText(value);
+};
+
+const translateApplicationType = (value: string) => applicationTypeLabels[value] || value;
+const translateRepoScope = (value: string) => repoScopeLabels[value] || value;
+const translateSupportStatus = (value: string) => supportStatusLabels[value] || value;
+const translateArchitecture = (value: string) => architectureLabels[value] || value;
+const translateDescription = (value: string) => descriptionLabels[value] || value;
+const translateTrustLevel = (value: string) =>
+  value === 'High trust' ? 'Tin cậy cao'
+    : value === 'Medium' ? 'Trung bình'
+      : value === 'Low' ? 'Thấp'
+        : value === 'Untrusted' ? 'Không tin cậy'
+          : value;
+const translateStatus = (value: string) => (value === 'PASS' ? 'ĐẠT' : value === 'FAIL' ? 'KHÔNG ĐẠT' : value);
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+};
+
+const formatInferredValue = (field?: InferredField) => {
+  if (!field) return 'Không phát hiện được từ mã nguồn';
+  return Array.isArray(field.value) ? field.value.join(', ') : field.value;
+};
+
+const confidenceClass = (confidence?: string) => {
+  if (confidence === 'high') return 'border-emerald-100 bg-emerald-50 text-emerald-700';
+  if (confidence === 'medium') return 'border-blue-100 bg-blue-50 text-blue-700';
+  return 'border-amber-100 bg-amber-50 text-amber-700';
+};
+
+const formatEvidenceValue = (value: unknown) =>
+  value === null || value === undefined || value === '' ? '-' : String(value);
+
+const downloadJson = (fileName: string, value: unknown) => {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+const formatUiError = (value: string) => {
+  const normalized = value.replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (/Filename too long|unable to create file|checkout failed/i.test(normalized)) {
+    return [
+      'Git da clone repository nhung checkout that bai vi duong dan file qua dai tren Windows.',
+      'Ung dung da bat core.longpaths cho cac lan clone tiep theo. Neu van gap loi, hay bat long paths trong Windows hoac chon repository co path ngan hon.',
+    ].join('\n');
   }
-  const rowsByDepth = new Map<number, number>();
-  const nodes = graph.nodes.map(node => {
-    const depth = depthById.get(node.id) ?? 1;
-    const row = rowsByDepth.get(depth) || 0;
-    rowsByDepth.set(depth, row + 1);
-    return {
-      ...node,
-      type: node.type === 'PROJECT' ? 'PROJECT' as const : 'COMPONENT' as const,
-      vulnerabilityCount: 0,
-      riskLevel: 'LOW' as const,
-      depth,
-      x: depth * 330,
-      y: row * 120,
-    };
-  });
-  return {
-    snapshotId: 'validation-analysis',
-    nodes,
-    edges: graph.edges.map(edge => ({ ...edge, relationship: 'DEPENDS_ON' as const, isTransitive: false })),
-    summary: { ...graph.summary, maxDepth: Math.max(0, ...nodes.map(node => node.depth)), cycleDetected: false, criticalCount: 0, highCount: 0 },
-  };
+  return normalized.length > 1200 ? `${normalized.slice(0, 1200)}\n...` : normalized;
 };
 
-export default function SbomValidationScenarios() {
-  const [repos, setRepos] = useState<Repo[]>([]);
-  const [selectedId, setSelectedId] = useState('');
-  const [query, setQuery] = useState('');
-  const [scenario, setScenario] = useState<1 | 2>(1);
+const componentKey = (component: any, index: number) =>
+  String(component?.['bom-ref'] || component?.purl || `${component?.name || 'unknown'}@${component?.version || 'unknown'}#${index}`);
+
+const componentLabel = (component: any, index: number) =>
+  `${component?.name || 'unknown'}@${component?.version || 'no-version'} (${componentKey(component, index)})`;
+
+const countDependencyEdges = (sbom: any) =>
+  (Array.isArray(sbom?.dependencies) ? sbom.dependencies : [])
+    .reduce((sum: number, dep: any) => sum + (Array.isArray(dep?.dependsOn) ? dep.dependsOn.length : 0), 0);
+
+const buildUploadedSbomState = (fileName: string, sbom: any, changes: string[] = []): UploadedSbom => ({
+  fileName,
+  sbom,
+  componentCount: Array.isArray(sbom?.components) ? sbom.components.length : 0,
+  dependencyCount: countDependencyEdges(sbom),
+  changes,
+});
+
+const actionButtonClass = (action: StepAction) => {
+  if (action.primary) return 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:hover:bg-blue-600';
+  if (action.warning) return 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100 disabled:hover:bg-amber-50';
+  return 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 disabled:hover:bg-white';
+};
+
+const MiniGraph: React.FC<{ graph: Graph | null }> = ({ graph }) => {
+  const nodes = (graph?.nodes || []).slice(0, 28);
+  const edges = (graph?.edges || []).filter(edge =>
+    nodes.some(node => node.id === edge.source) && nodes.some(node => node.id === edge.target)
+  ).slice(0, 42);
+  const positions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number }>();
+    nodes.forEach((node, index) => {
+      const col = index % 4;
+      const row = Math.floor(index / 4);
+      map.set(node.id, { x: 90 + col * 220, y: 70 + row * 86 });
+    });
+    return map;
+  }, [nodes]);
+
+  if (!graph) {
+    return (
+      <div className="flex min-h-[280px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
+          <Network className="h-6 w-6" />
+        </div>
+        <h4 className="text-sm font-bold text-slate-800">Chưa có dữ liệu đồ thị</h4>
+        <p className="mt-1 max-w-md text-sm text-slate-500">
+          Hãy chọn repository và chạy Phân tích nguồn trước.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-auto rounded-lg border border-slate-200 bg-slate-50">
+      <svg width={960} height={Math.max(420, Math.ceil(nodes.length / 4) * 96 + 80)} className="block">
+        <defs>
+          <marker id="scenario-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+            <path d="M0,0 L0,7 L7,3.5 z" fill="#64748b" />
+          </marker>
+        </defs>
+        {edges.map(edge => {
+          const source = positions.get(edge.source);
+          const target = positions.get(edge.target);
+          if (!source || !target) return null;
+          return (
+            <line
+              key={edge.id}
+              x1={source.x + 150}
+              y1={source.y}
+              x2={target.x}
+              y2={target.y}
+              stroke="#94a3b8"
+              strokeWidth={1.2}
+              markerEnd="url(#scenario-arrow)"
+              opacity={0.65}
+            />
+          );
+        })}
+        {nodes.map(node => {
+          const position = positions.get(node.id);
+          if (!position) return null;
+          return (
+            <g key={node.id} transform={`translate(${position.x}, ${position.y - 28})`}>
+              <rect
+                width={168}
+                height={56}
+                rx={8}
+                className={node.type === 'PROJECT' ? 'fill-slate-900 stroke-slate-900 dark:fill-slate-950 dark:stroke-slate-600' : 'fill-white stroke-slate-300 dark:fill-slate-900 dark:stroke-slate-700'}
+              />
+              <text x={12} y={22} className={node.type === 'PROJECT' ? 'fill-white text-xs font-semibold' : 'fill-slate-800 text-xs font-semibold dark:fill-slate-100'}>
+                {node.label.length > 22 ? `${node.label.slice(0, 21)}...` : node.label}
+              </text>
+              <text x={12} y={42} className={node.type === 'PROJECT' ? 'fill-slate-300 text-[10px]' : 'fill-slate-500 text-[10px] dark:fill-slate-400'}>
+                {node.ecosystem}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
+const StepGroupCard: React.FC<{ index: number; group: StepGroup }> = ({ index, group }) => (
+  <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex items-start gap-3">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+        {index + 1}
+      </div>
+      <div className="min-w-0 flex-1">
+        <h4 className="text-sm font-bold text-slate-900">{group.title}</h4>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
+      </div>
+    </div>
+    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {group.actions.map(action => (
+        <div key={action.label}>
+          <button
+            type="button"
+            onClick={action.onClick}
+            disabled={action.disabled || action.loading}
+            title={action.disabled ? action.helper : action.label}
+            className={`inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${actionButtonClass(action)}`}
+          >
+            {action.loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : action.icon}
+            <span className="truncate">{action.label}</span>
+          </button>
+          {action.disabled && action.helper && (
+            <p className="mt-1.5 text-xs leading-4 text-slate-400">{action.helper}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+const SbomValidationScenarios: React.FC = () => {
+  const [repositories, setRepositories] = useState<ScenarioRepo[]>([]);
+  const [selectedRepoId, setSelectedRepoId] = useState('');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
-  const [verification, setVerification] = useState<Verification | null>(null);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [generated, setGenerated] = useState(false);
-  const [graphSearch, setGraphSearch] = useState('');
-  const [graphDepth, setGraphDepth] = useState(5);
-  const [onlyVulnerable, setOnlyVulnerable] = useState(false);
-  const analysisRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<HTMLDivElement>(null);
-
-  const selected = repos.find(repo => repo.id === selectedId) || null;
-  const filtered = useMemo(() => repos.filter(repo => `${repo.projectName} ${repo.techStack.join(' ')}`.toLowerCase().includes(query.toLowerCase())), [repos, query]);
-  const visualGraph = useMemo(() => {
-    const base = toVisualGraph(graph);
-    if (!base) return null;
-    const needle = graphSearch.trim().toLowerCase();
-    const nodes = base.nodes.filter(node => node.depth <= graphDepth
-      && (!needle || `${node.label} ${node.ecosystem} ${node.version || ''}`.toLowerCase().includes(needle))
-      && (!onlyVulnerable || node.vulnerabilityCount > 0));
-    const nodeIds = new Set(nodes.map(node => node.id));
-    const edges = base.edges.filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target));
-    return { ...base, nodes, edges, summary: { ...base.summary, nodeCount: nodes.length, edgeCount: edges.length } };
-  }, [graph, graphSearch, graphDepth, onlyVulnerable]);
+  const [generatedSbom, setGeneratedSbom] = useState<any | null>(null);
+  const [uploadedSbom, setUploadedSbom] = useState<UploadedSbom | null>(null);
+  const [verification, setVerification] = useState<VerificationReport | null>(null);
+  const [testReport, setTestReport] = useState<TestReport | null>(null);
+  const [faultyInfo, setFaultyInfo] = useState<any | null>(null);
+  const [componentToRemove, setComponentToRemove] = useState('');
+  const [componentToMutate, setComponentToMutate] = useState('');
+  const [mutationVersion, setMutationVersion] = useState('0.0.0-demo-mismatch');
+  const [newComponent, setNewComponent] = useState({ name: 'fake-lib-demo', version: '9.9.9', ecosystem: 'npm' });
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const analysisSectionRef = useRef<HTMLElement | null>(null);
+  const graphSectionRef = useRef<HTMLElement | null>(null);
+  const selectedRepo = repositories.find(repo => repo.id === selectedRepoId) || repositories[0];
+  const uploadedComponents: any[] = Array.isArray(uploadedSbom?.sbom?.components) ? uploadedSbom.sbom.components : [];
 
   const loadCatalog = async () => {
+    setCatalogLoading(true);
+    setError(null);
     try {
-      const response = await fetch(api('/api/validation-scenarios'));
-      if (!response.ok) throw new Error(await errorMessage(response));
-      const data = await response.json();
-      setRepos(data.repositories || []);
-    } catch (error) { setError(error instanceof Error ? error.message : 'Không tải được repository catalog.'); }
+      const res = await fetch(`${API_BASE}/api/validation-scenarios`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Không thể tải danh sách repository đã lưu.');
+      setRepositories(data.repositories || []);
+      if (data.repositories?.[0]?.id && !selectedRepoId) setSelectedRepoId(data.repositories[0].id);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Không thể tải danh sách repository đã lưu.');
+    } finally {
+      setCatalogLoading(false);
+    }
   };
-  // Catalog loading is the external synchronization owned by this page.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadCatalog(); }, []);
 
-  const run = async (name: string, operation: () => Promise<void>) => {
-    setBusy(name); setError(''); setNotice('');
-    try { await operation(); } catch (error) { setError(error instanceof Error ? error.message : 'Thao tác thất bại.'); }
-    finally { setBusy(''); }
+  useEffect(() => {
+    loadCatalog();
+  }, []);
+
+  const runAction = async (action: string, fn: () => Promise<void>) => {
+    setLoadingAction(action);
+    setError(null);
+    try {
+      await fn();
+    } catch (error) {
+      setError(formatUiError(error instanceof Error ? error.message : 'Thao tác thất bại.'));
+    } finally {
+      setLoadingAction(null);
+    }
   };
-  const post = async (path: string) => {
-    const response = await fetch(api(path), { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-    if (!response.ok) throw new Error(await errorMessage(response));
-    return response.json();
+
+  const selectRepo = (repoId: string) => {
+    setSelectedRepoId(repoId);
+    setAnalysis(null);
+    setGraph(null);
+    setGeneratedSbom(null);
+    setUploadedSbom(null);
+    setVerification(null);
+    setTestReport(null);
+    setFaultyInfo(null);
+    setComponentToRemove('');
+    setComponentToMutate('');
   };
-  const analyze = () => selected && run('analyze', async () => {
-    const data = await post(`/api/validation-scenarios/${selected.id}/analyze`);
-    setAnalysis(data.analysis); setGraph(data.graph); setVerification(null);
-    const hasRepositorySbom = data.analysis.repositorySbom?.usableForVerification;
-    setScenario(hasRepositorySbom ? 2 : 1);
-    setNotice(hasRepositorySbom
-      ? `Đã nhận diện SBOM ${data.analysis.repositorySbom.selectedFile.path} ngay trong repository. Flow đã chuyển sang Verify Current SBOM.`
-      : `Repository không chứa SBOM dùng được. Flow đã chuyển sang tạo SBOM mới tại commit ${data.analysis.shortCommit}.`);
+
+  const analyze = () => runAction('Analyze Source', async () => {
+    if (!selectedRepoId) return;
+    setAnalysis(null);
+    setGraph(null);
+    setGeneratedSbom(null);
+    setVerification(null);
+    setTestReport(null);
+    setFaultyInfo(null);
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/${selectedRepoId}/analyze`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Phân tích nguồn thất bại.');
+    setAnalysis(data.analysis);
+    setGraph(data.graph);
   });
-  const confirm = () => analysis && run('confirm', async () => {
-    await post(`/api/validation-scenarios/runs/${analysis.runId}/confirm`);
-    setAnalysis({ ...analysis, confirmed: true }); setNotice('Kết quả phân tích đã được xác nhận.');
+
+  const confirm = () => runAction('Confirm Analysis', async () => {
+    if (!analysis?.runId) return;
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/confirm`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Xác nhận phân tích thất bại.');
+    setAnalysis(current => current ? { ...current, confirmed: true } : current);
   });
-  const generate = () => analysis && run('generate', async () => {
-    await post(`/api/validation-scenarios/runs/${analysis.runId}/generate`);
-    setGenerated(true);
-    setNotice(`Đã generate và lưu CycloneDX SBOM gắn với commit ${analysis.shortCommit}.`);
-    await loadCatalog();
+
+  const handleSbomFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      const text = await file.text();
+      const sbom = JSON.parse(text);
+      if (!Array.isArray(sbom.components)) throw new Error('File SBOM phải là CycloneDX JSON có trường components.');
+      setUploadedSbom(buildUploadedSbomState(file.name, sbom));
+      setVerification(null);
+      setTestReport(null);
+      setFaultyInfo(null);
+      setComponentToRemove('');
+      setComponentToMutate('');
+    } catch (error) {
+      setUploadedSbom(null);
+      setError(error instanceof Error ? error.message : 'Không đọc được file SBOM JSON.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const updateUploadedSbom = (updater: (draft: any) => string | null) => {
+    if (!uploadedSbom) return;
+    const draft = JSON.parse(JSON.stringify(uploadedSbom.sbom));
+    const change = updater(draft);
+    if (!change) return;
+    setUploadedSbom(buildUploadedSbomState(uploadedSbom.fileName, draft, [...uploadedSbom.changes, change]));
+    setVerification(null);
+    setTestReport(null);
+    setFaultyInfo(null);
+  };
+
+  const removeUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const removed = components.find((component: any, index: number) => componentKey(component, index) === componentToRemove);
+    if (!removed) return null;
+    draft.components = components.filter((component: any, index: number) => componentKey(component, index) !== componentToRemove);
+    setComponentToRemove('');
+    return `Xóa ${removed.name || 'unknown'}@${removed.version || 'no-version'}`;
   });
-  const verifyCurrent = () => selected && run('verify', async () => {
-    const data = await post(analysis?.repositorySbom?.usableForVerification
-      ? `/api/validation-scenarios/runs/${analysis.runId}/verify`
-      : `/api/validation-scenarios/${selected.id}/verify-current`);
+
+  const mutateUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const target = components.find((component: any, index: number) => componentKey(component, index) === componentToMutate);
+    if (!target) return null;
+    const before = `${target.name || 'unknown'}@${target.version || 'no-version'}`;
+    target.version = mutationVersion || '0.0.0-demo-mismatch';
+    setComponentToMutate('');
+    return `Sửa version ${before} -> ${target.version}`;
+  });
+
+  const addUploadedComponent = () => updateUploadedSbom(draft => {
+    const components = Array.isArray(draft.components) ? draft.components : [];
+    const name = newComponent.name.trim() || 'fake-lib-demo';
+    const version = newComponent.version.trim() || '9.9.9';
+    const ecosystem = newComponent.ecosystem.trim() || 'npm';
+    const purl = `pkg:${ecosystem}/${name}@${version}`;
+    components.push({ type: 'library', name, version, purl, 'bom-ref': purl });
+    draft.components = components;
+    return `Thêm ${name}@${version}`;
+  });
+
+  const generate = () => runAction('Generate SBOM', async () => {
+    if (!analysis?.runId) return;
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/generate`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Tạo SBOM thất bại.');
+    setGeneratedSbom(data);
+  });
+
+  const createFaulty = () => runAction('Create Faulty SBOM Demo', async () => {
+    if (uploadedSbom) {
+      const faulty = JSON.parse(JSON.stringify(uploadedSbom.sbom));
+      const components = Array.isArray(faulty.components) ? faulty.components : [];
+      const removedComponent = components.length > 0 ? components.shift() : null;
+      const versionMutatedComponent = components.find((component: any) => component?.name);
+      if (versionMutatedComponent) versionMutatedComponent.version = '0.0.0-demo-mismatch';
+      components.push({
+        type: 'library',
+        name: 'fake-lib-demo',
+        version: '9.9.9',
+        purl: 'pkg:npm/fake-lib-demo@9.9.9',
+        'bom-ref': 'pkg:npm/fake-lib-demo@9.9.9',
+      });
+      faulty.components = components;
+      setFaultyInfo({
+        sbom: faulty,
+        changes: {
+          removedComponent: removedComponent ? `${removedComponent.name || 'unknown'}@${removedComponent.version || 'unknown'}` : null,
+          addedComponent: 'fake-lib-demo@9.9.9',
+          versionMutatedComponent: versionMutatedComponent ? `${versionMutatedComponent.name || 'unknown'} -> 0.0.0-demo-mismatch` : null,
+        },
+      });
+      setVerification(null);
+      setTestReport(null);
+      return;
+    }
+    if (!analysis?.runId) return;
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/faulty`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Tạo SBOM lỗi cho bản demo thất bại.');
+    setFaultyInfo(data);
+  });
+
+  const verify = (useFaulty: boolean) => runAction(useFaulty ? 'Verify Faulty SBOM' : 'Verify SBOM', async () => {
+    if (!analysis?.runId) return;
+    const targetSbom = useFaulty ? faultyInfo?.sbom : uploadedSbom?.sbom;
+    if (targetSbom) {
+      const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/verify-uploaded`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sbom: targetSbom,
+          fileName: useFaulty ? `faulty-${uploadedSbom?.fileName || 'sbom.json'}` : uploadedSbom?.fileName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Kiểm chứng SBOM tải lên thất bại.');
+      setVerification(data.verificationReport);
+      setTestReport(data.testReport);
+      return;
+    }
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ useFaulty }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Kiểm chứng SBOM thất bại.');
     setVerification(data.verificationReport);
-    setNotice(data.verificationReport.recommendation || 'Verify hoàn tất.');
-    await loadCatalog();
+    setTestReport(data.testReport);
   });
 
-  const steps = scenario === 1
-    ? [
-      ['1', 'Chọn repository', Boolean(selected)], ['2', 'Analyze Source', Boolean(analysis)],
-      ['3', 'Xác nhận phân tích', Boolean(analysis?.confirmed)], ['4', 'Generate & lưu SBOM', generated],
-    ]
-    : [
-      ['1', 'Analyze & nhận diện SBOM', Boolean(analysis?.repositorySbom?.usableForVerification)], ['2', 'Verify Current SBOM', Boolean(verification)],
-      ['3', 'Đọc Trust Score', Boolean(verification)], ['4', 'Regenerate nếu cần', verification?.status === 'PASS'],
-    ];
+  const loadReport = () => runAction('View Test Report', async () => {
+    if (!analysis?.runId) return;
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/report`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Xem báo cáo kiểm thử thất bại.');
+    setTestReport(data);
+  });
+
+  const stepGroups: StepGroup[] = [
+    {
+      title: 'Phân tích nguồn',
+      description: 'Clone repository thật, phát hiện file phụ thuộc và chạy Syft để tạo dữ liệu phân tích.',
+      actions: [{
+        label: 'Analyze Source',
+        icon: <Play className="h-4 w-4" />,
+        onClick: analyze,
+        disabled: !selectedRepo || Boolean(loadingAction),
+        loading: loadingAction === 'Analyze Source',
+        primary: true,
+        helper: !selectedRepo ? 'Hãy chọn repository trước.' : 'Đang có thao tác khác chạy.',
+      }],
+    },
+    {
+      title: 'Kiểm tra kết quả phân tích',
+      description: 'Xem file phụ thuộc đã phát hiện và đồ thị quan hệ package sau khi phân tích.',
+      actions: [
+        {
+          label: 'View Dependencies',
+          icon: <GitBranch className="h-4 w-4" />,
+          onClick: () => analysisSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+          disabled: !analysis,
+          helper: 'Chưa phân tích nên chưa có danh sách phụ thuộc.',
+        },
+        {
+          label: 'View Dependency Graph',
+          icon: <Network className="h-4 w-4" />,
+          onClick: () => graphSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+          disabled: !graph,
+          helper: 'Chưa phân tích nên chưa có dữ liệu đồ thị.',
+        },
+      ],
+    },
+    {
+      title: 'Xác nhận và tạo SBOM',
+      description: 'Người dùng xác nhận kết quả phân tích trước, sau đó mới được tạo SBOM để xem hoặc tải xuống.',
+      actions: [
+        {
+          label: 'Confirm Analysis',
+          icon: <CheckCircle2 className="h-4 w-4" />,
+          onClick: confirm,
+          disabled: !analysis || analysis.confirmed || Boolean(loadingAction),
+          loading: loadingAction === 'Confirm Analysis',
+          primary: Boolean(analysis && !analysis.confirmed),
+          helper: !analysis ? 'Cần chạy Phân tích nguồn trước.' : analysis.confirmed ? 'Kết quả phân tích đã được xác nhận.' : 'Đang có thao tác khác chạy.',
+        },
+        {
+          label: 'Generate SBOM',
+          icon: <FileJson className="h-4 w-4" />,
+          onClick: generate,
+          disabled: !analysis?.confirmed || Boolean(loadingAction),
+          loading: loadingAction === 'Generate SBOM',
+          primary: Boolean(analysis?.confirmed && !generatedSbom),
+          helper: !analysis?.confirmed ? 'Cần Confirm Analysis trước khi tạo SBOM.' : 'Đang có thao tác khác chạy.',
+        },
+      ],
+    },
+    {
+      title: 'Kiểm chứng SBOM',
+      description: 'Tải file SBOM CycloneDX JSON từ máy lên, hệ thống phân tích lại source repo thật rồi so sánh hai phía.',
+      actions: [
+        {
+          label: 'Create Faulty SBOM Demo',
+          icon: <TriangleAlert className="h-4 w-4" />,
+          onClick: createFaulty,
+          disabled: (!uploadedSbom && !generatedSbom) || Boolean(loadingAction),
+          loading: loadingAction === 'Create Faulty SBOM Demo',
+          warning: true,
+          helper: !uploadedSbom && !generatedSbom ? 'Cần tải SBOM từ máy lên hoặc Generate SBOM trước.' : 'Đang có thao tác khác chạy.',
+        },
+        {
+          label: 'Verify SBOM',
+          icon: <ShieldCheck className="h-4 w-4" />,
+          onClick: () => verify(false),
+          disabled: !analysis || (!uploadedSbom && !generatedSbom) || Boolean(loadingAction),
+          loading: loadingAction === 'Verify SBOM',
+          primary: Boolean(analysis && (uploadedSbom || generatedSbom)),
+          helper: !analysis ? 'Cần Analyze Source trước.' : !uploadedSbom && !generatedSbom ? 'Cần tải file SBOM từ máy lên.' : 'Đang có thao tác khác chạy.',
+        },
+        {
+          label: 'Verify Faulty SBOM',
+          icon: <TriangleAlert className="h-4 w-4" />,
+          onClick: () => verify(true),
+          disabled: !faultyInfo || Boolean(loadingAction),
+          loading: loadingAction === 'Verify Faulty SBOM',
+          warning: true,
+          helper: !faultyInfo ? 'Cần Create Faulty SBOM Demo trước.' : 'Đang có thao tác khác chạy.',
+        },
+      ],
+    },
+    {
+      title: 'Báo cáo',
+      description: 'Mở báo cáo test case và evidence của lần chạy demo hiện tại.',
+      actions: [{
+        label: 'View Test Report',
+        icon: <TestTube2 className="h-4 w-4" />,
+        onClick: loadReport,
+        disabled: !analysis || Boolean(loadingAction),
+        loading: loadingAction === 'View Test Report',
+        helper: !analysis ? 'Cần chạy Phân tích nguồn trước.' : 'Đang có thao tác khác chạy.',
+      }],
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <header className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-6 text-slate-900 shadow-sm dark:border-slate-700 dark:from-slate-950 dark:to-slate-900 dark:text-white">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div><p className="text-xs font-bold uppercase tracking-[.18em] text-blue-600 dark:text-blue-300">Repository-first SBOM workflow</p>
-            <h1 className="mt-2 text-2xl font-bold">SBOM Validation Scenarios</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">SBOM luôn thuộc về source code của một Web Application trong một GitHub repository. Phiên bản này chưa hỗ trợ multi-repo hoặc microservice nhiều repository.</p>
-          </div>
-          <div className="flex gap-2"><span className="rounded-full bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-200">Web Application</span><span className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">Single Repository</span></div>
+      <header className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="max-w-4xl">
+          <h2 className="text-2xl font-bold text-slate-900">Kiểm chứng SBOM</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Phạm vi hiện tại chỉ xử lý repository GitHub thật của ứng dụng web trong một kho lưu trữ. Multi-repo và microservice nhiều repo là hướng mở rộng, không phải hỗ trợ của phiên bản demo này.
+          </p>
         </div>
       </header>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {([1, 2] as const).map(id => <button key={id} onClick={() => { setScenario(id); setVerification(null); }} className={`rounded-xl border p-4 text-left transition ${scenario === id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-          <p className="text-xs font-bold uppercase text-blue-600">Kịch bản {id}</p><p className="mt-1 font-bold text-slate-900">{id === 1 ? 'Service mới chưa có SBOM' : 'Service đã có SBOM, source vừa cập nhật'}</p>
-          <p className="mt-1 text-sm text-slate-500">{id === 1 ? 'Phân tích source → xác nhận → generate CycloneDX.' : 'Lấy SBOM đang lưu → phân tích lại source → Trust Score.'}</p>
-        </button>)}
-      </div>
-
-      {(error || notice) && <div className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{error ? <AlertTriangle className="h-5 w-5 shrink-0" /> : <CheckCircle2 className="h-5 w-5 shrink-0" />}<pre className="whitespace-pre-wrap font-sans">{error || notice}</pre></div>}
-
-      <div className="grid gap-6 xl:grid-cols-[390px_1fr]">
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-4"><h2 className="font-bold text-slate-900">Repository thật ({repos.length})</h2><div className="relative mt-3"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm theo tên hoặc tech stack" className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400" /></div></div>
-          <div className="max-h-[620px] divide-y divide-slate-100 overflow-auto">{filtered.map(repo => <button key={repo.id} onClick={() => { setSelectedId(repo.id); setAnalysis(null); setGraph(null); setVerification(null); setGenerated(false); }} className={`w-full p-4 text-left transition ${selectedId === repo.id ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
-            <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{repo.projectName}</p><p className="mt-1 text-xs text-slate-500">{repo.techStack.join(' · ')}</p></div><span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold ${statusClass(repo.sbomStatus)}`}>{repo.sbomStatus}</span></div>
-            <p className="mt-2 truncate text-xs text-blue-600">{repo.githubUrl}</p>
-          </button>)}</div>
-        </section>
-
-        <div className="space-y-5">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            {selected ? <><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-bold uppercase text-slate-400">Repository đang chọn</p><h2 className="mt-1 text-xl font-bold text-slate-900">{selected.projectName}</h2><a href={selected.githubUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">{selected.githubUrl}<ExternalLink className="h-3.5 w-3.5" /></a></div><span className={`rounded-full border px-3 py-1.5 text-xs font-bold ${statusClass(selected.sbomStatus)}`}>{selected.sbomStatus}</span></div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Kiến trúc', selected.architectureType], ['Package manager', selected.packageManager.join(', ')], ['SBOM source commit', short(selected.sourceCommit)], ['Generated / analyzed', formatTime(selected.analyzedAt)]].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><p className="text-[11px] font-bold uppercase text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold text-slate-800">{value}</p></div>)}</div>
-            </> : <p className="text-sm text-slate-500">Chọn repository để bắt đầu.</p>}
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Tiến trình demo</h3><div className="mt-4 grid gap-2 lg:grid-cols-4">{steps.map(([number, label, done]) => <div key={label as string} className={`rounded-lg border p-3 ${done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}><div className="flex items-center gap-2">{done ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Circle className="h-4 w-4 text-slate-400" />}<span className="text-xs font-bold text-slate-500">BƯỚC {number as string}</span></div><p className="mt-2 text-sm font-semibold text-slate-800">{label as string}</p></div>)}</div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={analyze} disabled={!selected || !!busy} className="btn-primary"><Play className="h-4 w-4" />{busy === 'analyze' ? 'Đang clone, dò SBOM & phân tích...' : 'Analyze Source'}</button>
-              {scenario === 1 ? <>
-                <button onClick={() => analysisRef.current?.scrollIntoView({ behavior: 'smooth' })} disabled={!analysis} className="btn-secondary"><FileCode2 className="h-4 w-4" />View Detected Dependencies</button>
-                <button onClick={() => graphRef.current?.scrollIntoView({ behavior: 'smooth' })} disabled={!graph} className="btn-secondary"><Network className="h-4 w-4" />View Dependency Graph</button>
-                <button onClick={confirm} disabled={!analysis || analysis.confirmed || !!busy} className="btn-secondary"><ShieldCheck className="h-4 w-4" />Confirm Analysis</button>
-                <button onClick={generate} disabled={!analysis?.confirmed || !!busy} className="btn-primary"><Package className="h-4 w-4" />Generate SBOM</button>
-              </> : <>
-                <button onClick={verifyCurrent} disabled={(!analysis?.repositorySbom?.usableForVerification && !selected?.latestSbomId) || !!busy} className="btn-primary"><ShieldCheck className="h-4 w-4" />{busy === 'verify' ? 'Đang đối chiếu SBOM với source...' : 'Verify Current SBOM'}</button>
-                <button onClick={confirm} disabled={!analysis || analysis.confirmed || !!busy} className="btn-secondary"><ShieldCheck className="h-4 w-4" />Confirm New Analysis</button>
-                <button onClick={generate} disabled={!analysis?.confirmed || verification?.status === 'PASS' || !!busy} className="btn-secondary"><RefreshCw className="h-4 w-4" />Regenerate SBOM</button>
-              </>}
-            </div>
-          </section>
+      {error && (
+        <div className="flex flex-col gap-3 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="max-h-48 min-w-0 overflow-auto whitespace-pre-wrap break-words leading-5">{error}</p>
+          </div>
+          <button
+            type="button"
+            onClick={loadCatalog}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Thử lại
+          </button>
         </div>
+      )}
+
+      <div className="space-y-6">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Danh sách repository kiểm thử</h3>
+              <p className="mt-1 text-sm text-slate-500">Repository được lấy từ các dự án đã lưu trong hệ thống và có URL nguồn.</p>
+            </div>
+            <span className={mutedBadge}>{repositories.length || 0} repo</span>
+          </div>
+
+          <div className="hidden overflow-auto lg:block">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Repository</th>
+                  <th className="px-4 py-3">Kiến trúc</th>
+                  <th className="px-4 py-3">Stack</th>
+                  <th className="px-4 py-3">File phụ thuộc</th>
+                  <th className="px-4 py-3 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {catalogLoading ? (
+                  <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Đang tải danh sách repository...</td></tr>
+                ) : repositories.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Chưa có repository nào. Hãy tạo pipeline cho dự án và nhập URL repository trước.</td></tr>
+                ) : repositories.map(repo => {
+                  const selected = selectedRepoId === repo.id;
+                  return (
+                    <tr key={repo.id} className={selected ? 'bg-blue-50/40' : 'hover:bg-slate-50'}>
+                      <td className="px-4 py-4">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900">{repo.projectName}</p>
+                          <a href={repo.githubUrl} target="_blank" rel="noreferrer" className="mt-0.5 block truncate text-xs text-blue-600 hover:underline">
+                            {repo.githubUrl}
+                          </a>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <span className={scopeBadge}>{translateApplicationType(repo.applicationType)}</span>
+                            <span className={repoBadge}>{translateRepoScope(repo.repoScope)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">{translateArchitecture(repo.architectureType)}</td>
+                      <td className="px-4 py-4 text-slate-600">{repo.techStack.slice(0, 4).join(', ')}</td>
+                      <td className="px-4 py-4 font-mono text-xs text-slate-600">{repo.dependencyFiles.join(', ')}</td>
+                      <td className="px-4 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => selectRepo(repo.id)}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${selected ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                          {selected ? 'Đang chọn' : 'Chọn'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 p-4 lg:hidden">
+            {catalogLoading ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">Đang tải danh sách repository...</div>
+            ) : repositories.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">Chưa có repository nào. Hãy tạo pipeline cho dự án và nhập URL repository trước.</div>
+            ) : repositories.map(repo => {
+              const selected = selectedRepoId === repo.id;
+              return (
+                <article key={repo.id} className={`rounded-lg border p-4 ${selected ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200 bg-white'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-slate-900">{repo.projectName}</h4>
+                      <a href={repo.githubUrl} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs text-blue-600">
+                        {repo.githubUrl}
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectRepo(repo.id)}
+                      className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold ${selected ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700'}`}
+                    >
+                      {selected ? 'Đang chọn' : 'Chọn'}
+                    </button>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-600">{translateArchitecture(repo.architectureType)}</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <span className={scopeBadge}>{translateApplicationType(repo.applicationType)}</span>
+                    <span className={repoBadge}>{translateRepoScope(repo.repoScope)}</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <aside className="space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Kho lưu trữ đang chọn</p>
+            {selectedRepo ? (
+              <div className="mt-3 space-y-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{selectedRepo.projectName}</h3>
+                  <a href={selectedRepo.githubUrl} target="_blank" rel="noreferrer" className="mt-1 block break-all text-sm text-blue-600 hover:underline">
+                    {selectedRepo.githubUrl}
+                  </a>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{translateDescription(selectedRepo.description)}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={scopeBadge}>{translateApplicationType(selectedRepo.applicationType)}</span>
+                  <span className={repoBadge}>{translateRepoScope(selectedRepo.repoScope)}</span>
+                  <span className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                    {translateSupportStatus(selectedRepo.supportStatus)}
+                  </span>
+                </div>
+                <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-3 text-sm">
+                  <dt className="font-semibold text-slate-500">Kiến trúc</dt>
+                  <dd className="text-slate-800">{translateArchitecture(selectedRepo.architectureType)}</dd>
+                  <dt className="font-semibold text-slate-500">Công nghệ</dt>
+                  <dd className="text-slate-800">{selectedRepo.techStack.join(', ')}</dd>
+                  <dt className="font-semibold text-slate-500">Gói</dt>
+                  <dd className="text-slate-800">{selectedRepo.packageManager.join(', ')}</dd>
+                  <dt className="font-semibold text-slate-500">File</dt>
+                  <dd className="font-mono text-xs leading-5 text-slate-700">{selectedRepo.dependencyFiles.join(', ')}</dd>
+                </dl>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Chọn một repository để bắt đầu demo.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">SBOM tải lên từ máy</p>
+                <h3 className="mt-1 text-lg font-bold text-slate-900">File SBOM dùng để kiểm chứng</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                  Chọn repository thật, tải file SBOM CycloneDX JSON tương ứng lên, sau đó chạy Analyze Source và Verify SBOM để so sánh source thật với file này.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                <FileJson className="h-4 w-4" />
+                Tải file SBOM
+                <input type="file" accept=".json,application/json" onChange={handleSbomFile} className="hidden" />
+              </label>
+            </div>
+
+            {uploadedSbom ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">File</p>
+                    <p className="mt-1 break-all text-sm font-semibold text-slate-900">{uploadedSbom.fileName}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Components trong SBOM</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{uploadedSbom.componentCount}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Dependencies trong SBOM</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{uploadedSbom.dependencyCount}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Xóa component</p>
+                    <select
+                      value={componentToRemove}
+                      onChange={event => setComponentToRemove(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">Chọn component</option>
+                      {uploadedComponents.map((component, index) => (
+                        <option key={componentKey(component, index)} value={componentKey(component, index)}>
+                          {componentLabel(component, index)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={removeUploadedComponent}
+                      disabled={!componentToRemove}
+                      className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Xóa khỏi SBOM
+                    </button>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Sửa version</p>
+                    <select
+                      value={componentToMutate}
+                      onChange={event => setComponentToMutate(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">Chọn component</option>
+                      {uploadedComponents.map((component, index) => (
+                        <option key={componentKey(component, index)} value={componentKey(component, index)}>
+                          {componentLabel(component, index)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={mutationVersion}
+                      onChange={event => setMutationVersion(event.target.value)}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Version mới"
+                    />
+                    <button
+                      type="button"
+                      onClick={mutateUploadedComponent}
+                      disabled={!componentToMutate}
+                      className="mt-3 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Sửa version
+                    </button>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-bold text-slate-800">Thêm component</p>
+                    <input
+                      value={newComponent.name}
+                      onChange={event => setNewComponent(current => ({ ...current, name: event.target.value }))}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Tên package"
+                    />
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input
+                        value={newComponent.version}
+                        onChange={event => setNewComponent(current => ({ ...current, version: event.target.value }))}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        placeholder="Version"
+                      />
+                      <input
+                        value={newComponent.ecosystem}
+                        onChange={event => setNewComponent(current => ({ ...current, ecosystem: event.target.value }))}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        placeholder="npm, maven..."
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addUploadedComponent}
+                      className="mt-3 w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Thêm vào SBOM
+                    </button>
+                  </div>
+                </div>
+
+                {uploadedSbom.changes.length > 0 && (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p className="font-semibold">Thay đổi trên SBOM upload</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {uploadedSbom.changes.map((change, index) => <li key={`${change}-${index}`}>{change}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Chưa có file SBOM. Hãy tải file CycloneDX JSON đã lưu trên máy để kiểm chứng với repository đang chọn.
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            {stepGroups.map((group, index) => (
+              <StepGroupCard key={group.title} index={index} group={group} />
+            ))}
+          </section>
+        </aside>
       </div>
 
-      {analysis && <div ref={analysisRef} className="space-y-5 scroll-mt-5">
-        <section className={`rounded-xl border p-5 shadow-sm ${analysis.repositorySbom.usableForVerification ? 'border-emerald-200 bg-emerald-50' : 'border-blue-200 bg-blue-50'}`}>
-          <div className="flex items-start gap-3">{analysis.repositorySbom.usableForVerification ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /> : <Package className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />}<div>
-            <h3 className="font-bold text-slate-900">{analysis.repositorySbom.usableForVerification ? 'Đã nhận diện SBOM có sẵn trong repository' : 'Repository chưa chứa SBOM có thể kiểm chứng'}</h3>
-            {analysis.repositorySbom.selectedFile ? <p className="mt-1 text-sm text-slate-700"><span className="font-mono font-semibold">{analysis.repositorySbom.selectedFile.path}</span> · {analysis.repositorySbom.selectedFile.format} · {analysis.repositorySbom.selectedFile.componentCount} components. Công cụ sẽ dùng chính file này để verify.</p> : <p className="mt-1 text-sm text-slate-700">Đã quét source tree nhưng không tìm thấy CycloneDX/SPDX JSON hợp lệ; hãy xác nhận phân tích rồi generate SBOM mới.</p>}
-            {analysis.repositorySbom.files.length > 1 && <p className="mt-2 text-xs text-slate-600">Các candidate phát hiện: {analysis.repositorySbom.files.map(file => file.path).join(', ')}</p>}
-          </div></div>
+      {analysis && (
+        <section ref={analysisSectionRef} className="space-y-4 scroll-mt-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['Thành phần', analysis.componentCount],
+              ['Phụ thuộc', analysis.dependencyCount],
+              ['File phụ thuộc', analysis.dependencyFileCount],
+              ['Kích thước SBOM', formatBytes(analysis.sbomSizeBytes)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          {analysis.inferredMetadata && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900">Thông tin metadata do công cụ phát hiện</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Các trường này được suy luận từ Git history, file metadata và cấu trúc repository. Người dùng chỉ xem lại và xác nhận.
+                  </p>
+                </div>
+                {analysis.confirmed && (
+                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    Đã xác nhận
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                {[
+                  ['Tác giả', analysis.inferredMetadata.authors],
+                  ['Dịch vụ', analysis.inferredMetadata.services],
+                  ['Giai đoạn vòng đời', analysis.inferredMetadata.lifecyclePhase],
+                ].map(([label, field]) => {
+                  const item = field as InferredField;
+                  return (
+                    <div key={label as string} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label as string}</p>
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${confidenceClass(item.confidence)}`}>
+                          {item.confidence}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{formatInferredValue(item)}</p>
+                      <p className="mt-2 text-xs leading-4 text-slate-500">Nguồn: {item.source}</p>
+                      {item.reason && <p className="mt-1 text-xs leading-4 text-amber-700">{item.reason}</p>}
+                      {item.suggestions && item.suggestions.length > 0 && (
+                        <p className="mt-1 text-xs leading-4 text-blue-700">Gợi ý thêm: {item.suggestions.join(', ')}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="font-bold text-slate-900">Kết quả phân tích</h3>
+              <dl className="mt-4 grid grid-cols-[150px_1fr] gap-3 text-sm">
+                <dt className="font-semibold text-slate-500">Repository</dt><dd className="break-all text-slate-800">{analysis.githubUrl}</dd>
+                <dt className="font-semibold text-slate-500">Ứng dụng</dt><dd><span className={scopeBadge}>{translateApplicationType(analysis.applicationType)}</span></dd>
+                <dt className="font-semibold text-slate-500">Kho</dt><dd><span className={repoBadge}>{translateRepoScope(analysis.repoScope)}</span></dd>
+                <dt className="font-semibold text-slate-500">Kiến trúc</dt><dd>{translateArchitecture(analysis.architectureType)}</dd>
+                <dt className="font-semibold text-slate-500">Ecosystem</dt><dd>{analysis.ecosystems.join(', ') || '-'}</dd>
+                <dt className="font-semibold text-slate-500">Thời gian</dt><dd>{analysis.analysisDurationMs} ms</dd>
+                <dt className="font-semibold text-slate-500">Tool</dt><dd>{analysis.toolInfo}</dd>
+                <dt className="font-semibold text-slate-500">Timestamp</dt><dd>{new Date(analysis.createdTimestamp).toLocaleString('vi-VN')}</dd>
+                <dt className="font-semibold text-slate-500">SBOM path</dt><dd className="break-all">{analysis.sbomPath}</dd>
+              </dl>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="font-bold text-slate-900">File phụ thuộc đã phát hiện</h3>
+              <div className="mt-4 max-h-80 overflow-auto rounded-lg border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr><th className="px-3 py-2 text-left">File</th><th className="px-3 py-2 text-left">Đường dẫn</th><th className="px-3 py-2 text-right">Size</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analysis.dependencyFiles.map(file => (
+                      <tr key={file.path}>
+                        <td className="px-3 py-2 font-mono text-xs">{file.name}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-600">{file.path}</td>
+                        <td className="px-3 py-2 text-right">{formatBytes(file.sizeBytes)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </section>
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Components', analysis.componentCount], ['Dependencies', analysis.dependencyCount], ['Dependency files', analysis.dependencyFiles.length], ['Commit', analysis.shortCommit]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase text-slate-400">{label}</p><p className="mt-2 text-2xl font-bold text-slate-900">{value}</p></div>)}</section>
-        <section className="grid gap-5 xl:grid-cols-2"><div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Source evidence</h3><dl className="mt-4 grid grid-cols-[130px_1fr] gap-3 text-sm"><dt className="text-slate-500">Repository</dt><dd className="break-all font-medium">{analysis.githubUrl}</dd><dt className="text-slate-500">Commit</dt><dd className="font-mono">{analysis.sourceCommit}</dd><dt className="text-slate-500">Branch</dt><dd>{analysis.branch}</dd><dt className="text-slate-500">Analyzed at</dt><dd>{formatTime(analysis.analyzedAt)}</dd><dt className="text-slate-500">Analyzer</dt><dd>{analysis.toolInfo}</dd></dl></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Metadata tự suy luận</h3><div className="mt-4 space-y-3">{Object.entries(analysis.inferredMetadata || {}).map(([name, field]) => <div key={name} className="rounded-lg bg-slate-50 p-3"><div className="flex justify-between"><p className="text-xs font-bold uppercase text-slate-500">{name}</p><span className="text-[10px] font-bold text-blue-600">{field.confidence}</span></div><p className="mt-1 text-sm font-semibold">{Array.isArray(field.value) ? field.value.join(', ') : field.value}</p><p className="mt-1 text-xs text-slate-500">Nguồn: {field.source}</p></div>)}</div></div></section>
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Dependency files phát hiện</h3><div className="mt-4 overflow-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-slate-50 text-left text-xs uppercase text-slate-500"><th className="p-3">File</th><th className="p-3">Path</th><th className="p-3 text-right">Bytes</th></tr></thead><tbody>{analysis.dependencyFiles.map(file => <tr key={file.path} className="border-b border-slate-100"><td className="p-3 font-mono font-semibold">{file.name}</td><td className="p-3 font-mono text-xs text-slate-600">{file.path}</td><td className="p-3 text-right">{file.sizeBytes.toLocaleString()}</td></tr>)}</tbody></table></div></section>
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold text-slate-900">Component table</h3><div className="mt-4 max-h-96 overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-slate-50"><tr className="text-left text-xs uppercase text-slate-500"><th className="p-3">Name</th><th className="p-3">Version</th><th className="p-3">Type</th><th className="p-3">PURL</th></tr></thead><tbody>{analysis.components.map((component, index) => <tr key={`${component.purl}-${index}`} className="border-t border-slate-100"><td className="p-3 font-semibold">{component.name}</td><td className="p-3">{component.version || '—'}</td><td className="p-3">{component.type}</td><td className="max-w-md truncate p-3 font-mono text-xs text-slate-500">{component.purl || '—'}</td></tr>)}</tbody></table></div></section>
-      </div>}
+      )}
 
-      <section ref={graphRef} className="scroll-mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Dependency graph</h3><p className="mt-1 text-sm text-slate-500">Cùng bộ visualize, zoom, search và node detail như các trang SBOM khác.</p></div>{graph && <span className="text-xs font-bold text-slate-500">{graph.summary.nodeCount} nodes · {graph.summary.edgeCount} edges</span>}</div><SbomDependencyGraph graph={visualGraph} search={graphSearch} depth={graphDepth} onlyVulnerable={onlyVulnerable} onSearchChange={setGraphSearch} onDepthChange={setGraphDepth} onOnlyVulnerableChange={setOnlyVulnerable} /></section>
+      <section ref={graphSectionRef} className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-bold text-slate-900">Đồ thị phụ thuộc</h3>
+            <p className="mt-1 text-sm text-slate-500">Node là component/package, edge là quan hệ phụ thuộc.</p>
+          </div>
+          <span className="text-sm text-slate-500">{graph ? `${graph.summary.nodeCount} nodes / ${graph.summary.edgeCount} edges` : 'Chưa có dữ liệu'}</span>
+        </div>
+        <MiniGraph graph={graph} />
+      </section>
 
-      {verification && <section className={`rounded-xl border p-5 shadow-sm ${verification.status === 'PASS' ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/50'}`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-bold uppercase text-slate-500">Verify report</p><h3 className="mt-1 text-xl font-bold text-slate-900">{verification.recommendation || (verification.status === 'PASS' ? 'SBOM is up-to-date' : 'SBOM needs update')}</h3><p className="mt-2 text-sm text-slate-600">Repo: {selected?.githubUrl} · verified {formatTime(verification.verifiedAt)}</p></div><div className="rounded-xl bg-white px-6 py-3 text-center shadow-sm"><p className="text-xs font-bold uppercase text-slate-500">Trust Score</p><p className="text-3xl font-black text-slate-900">{verification.trustScore}%</p><p className="text-xs text-slate-500">{verification.trustLevel}</p></div></div>
-        {verification.sourceChangedSinceGeneration && <div className="mt-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-100 p-3 text-sm font-semibold text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" />Source code may have changed since SBOM generation. SBOM commit {short(verification.sbomSourceCommit)}, current commit {short(verification.currentCommit)}.</div>}
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[['MATCHED', verification.matchedCount], ['MISSING_IN_SBOM', verification.missingCount], ['EXTRA_IN_SBOM', verification.extraCount], ['VERSION_MISMATCH', verification.versionMismatchCount]].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-[11px] font-bold text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-900">{value}</p></div>)}</div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-3"><pre className="max-h-56 overflow-auto rounded-lg bg-white p-3 text-xs text-emerald-800">MATCHED\n{verification.MATCHED.slice(0, 40).join('\n') || '—'}</pre><pre className="max-h-56 overflow-auto rounded-lg bg-white p-3 text-xs text-rose-800">MISSING_IN_SBOM\n{verification.MISSING_IN_SBOM.join('\n') || '—'}</pre><pre className="max-h-56 overflow-auto rounded-lg bg-white p-3 text-xs text-amber-800">EXTRA_IN_SBOM\n{verification.EXTRA_IN_SBOM.join('\n') || '—'}\n\nVERSION_MISMATCH\n{verification.VERSION_MISMATCH.map(item => `${item.ecosystem}:${item.component} ${item.sbomVersion || '—'} → ${item.sourceVersion || '—'}`).join('\n') || '—'}</pre></div>
-      </section>}
+      {generatedSbom && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900">SBOM đã tạo</h3>
+              <p className="text-sm text-slate-500">Metadata, Components, Dependencies, Tool info và Created timestamp lấy từ CycloneDX JSON.</p>
+            </div>
+            <button onClick={() => downloadJson(`${selectedRepo?.id || 'repo'}-sbom.json`, generatedSbom.sbom)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Download className="h-4 w-4" /> Tải SBOM
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Components</p><p className="text-xl font-bold">{generatedSbom.components.length}</p></div>
+            <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Dependencies</p><p className="text-xl font-bold">{generatedSbom.dependencies.length}</p></div>
+            <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Tool</p><p className="text-sm font-semibold">{generatedSbom.toolInfo}</p></div>
+            <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Created</p><p className="text-sm font-semibold">{new Date(generatedSbom.createdTimestamp).toLocaleString('vi-VN')}</p></div>
+          </div>
+          {generatedSbom.inferredMetadata && (
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Tác giả</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.authors)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Dịch vụ</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.services)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Giai đoạn vòng đời</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatInferredValue(generatedSbom.inferredMetadata.lifecyclePhase)}</p>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {faultyInfo && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          Đã tạo SBOM lỗi: xóa {faultyInfo.changes?.removedComponent || '-'}, thêm {faultyInfo.changes?.addedComponent}, sửa version {faultyInfo.changes?.versionMutatedComponent || '-'}.
+        </div>
+      )}
+
+      {verification && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="font-bold text-slate-900">Báo cáo kiểm chứng</h3>
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+            {[
+              ['Trust Score', `${verification.trustScore}%`],
+              ['Trust Level', translateTrustLevel(verification.trustLevel)],
+              ['MATCHED', verification.matchedCount],
+              ['MISSING', verification.missingCount],
+              ['EXTRA', verification.extraCount],
+              ['VERSION', verification.versionMismatchCount],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <p className="text-xs font-bold text-slate-500">{label}</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <pre className="max-h-56 overflow-auto rounded-lg bg-emerald-50 p-3 text-xs text-emerald-900">MATCHED{"\n"}{verification.MATCHED.slice(0, 30).join('\n')}</pre>
+            <pre className="max-h-56 overflow-auto rounded-lg bg-rose-50 p-3 text-xs text-rose-900">MISSING_IN_SBOM{"\n"}{verification.MISSING_IN_SBOM.join('\n')}</pre>
+            <pre className="max-h-56 overflow-auto rounded-lg bg-amber-50 p-3 text-xs text-amber-900">EXTRA_IN_SBOM{"\n"}{verification.EXTRA_IN_SBOM.join('\n')}{"\n\n"}VERSION_MISMATCH{"\n"}{verification.VERSION_MISMATCH.map(item => `${item.ecosystem}:${item.component} source=${item.sourceVersion || '-'} sbom=${item.sbomVersion || '-'}`).join('\n')}</pre>
+          </div>
+        </section>
+      )}
+
+      {testReport && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-slate-900">Báo cáo kiểm thử</h3>
+            <span className={`${badge} ${testReport.result === 'PASS' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'}`}>{translateStatus(testReport.result)}</span>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {[
+              ['Test case ID', testReport.testCaseId],
+              ['Name', translateTestReportName(testReport.name)],
+              ['Scope', translateText(testReport.scope)],
+              ['Application type', translateApplicationType(testReport.applicationType)],
+              ['Repo scope', translateRepoScope(testReport.repoScope)],
+              ['Architecture', translateArchitecture(testReport.architectureType)],
+              ['Input repo', testReport.inputRepo],
+              ['Actual result', translateActualResult(testReport.actualResult)],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+                <p className="mt-1 break-words text-sm font-medium leading-5 text-slate-900">{value}</p>
+              </div>
+            ))}
+            <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3 lg:col-span-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Expected result</p>
+              <p className="mt-1 text-sm leading-5 text-slate-900">{translateText(testReport.expectedResult)}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-100 bg-white p-3">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Evidence</p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {[
+                ['Components', formatEvidenceValue(testReport.evidence.componentCount)],
+                ['Dependencies', formatEvidenceValue(testReport.evidence.dependencyCount)],
+                ['Files', formatEvidenceValue(testReport.evidence.dependencyFileCount)],
+                ['Trust score', formatEvidenceValue(testReport.evidence.trustScore)],
+                ['Graph nodes', formatEvidenceValue(testReport.evidence.graphNodes)],
+                ['Graph edges', formatEvidenceValue(testReport.evidence.graphEdges)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md bg-slate-50 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase text-slate-400">{label}</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 lg:grid-cols-2">
+              <p className="min-w-0 truncate rounded-md bg-slate-50 px-3 py-2" title={formatEvidenceValue(testReport.evidence.sbomPath)}>
+                SBOM: {formatEvidenceValue(testReport.evidence.sbomPath)}
+              </p>
+              <p className="min-w-0 truncate rounded-md bg-slate-50 px-3 py-2" title={formatEvidenceValue(testReport.evidence.generatedTimestamp)}>
+                Generated: {formatEvidenceValue(testReport.evidence.generatedTimestamp)}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
-}
+};
+
+export default SbomValidationScenarios;

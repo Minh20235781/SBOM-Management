@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
-  ExternalLink,
   FileCode2,
   GitBranch,
   GitMerge,
@@ -167,7 +166,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
     provider: 'GITHUB_ACTIONS',
     triggerType: 'PUSH',
     repoUrl: 'https://github.com/owner/repo.git',
-    workflowFile: 'sbom.yml',
   });
 
   const selectedProject = systems.find(system => system.system_id === projectId);
@@ -258,14 +256,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
     }
     loadRuns(selectedPipelineId).catch(() => setMessage('Không tải được pipeline runs.'));
   }, [selectedPipelineId]);
-
-  useEffect(() => {
-    if (!selectedPipelineId || selectedPipeline?.provider !== 'GITHUB_ACTIONS') return;
-    const timer = window.setInterval(() => {
-      loadRuns(selectedPipelineId).catch(() => undefined);
-    }, 15_000);
-    return () => window.clearInterval(timer);
-  }, [selectedPipelineId, selectedPipeline?.provider]);
 
   useEffect(() => {
     if (!selectedSnapshotId) {
@@ -364,9 +354,7 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
     if (projectId) await loadProjectData(Number(projectId));
     await loadRuns(selectedPipelineId);
     await loadRunDetail(run.run_id);
-  }, selectedPipeline?.provider === 'GITHUB_ACTIONS'
-    ? 'Đã gửi yêu cầu chạy workflow tới GitHub Actions. Trạng thái sẽ tự đồng bộ.'
-    : 'Pipeline nội bộ đã chạy xong và lưu SBOM.');
+  }, 'Pipeline đã chạy xong và lưu SBOM như artifact của DevOps.');
 
   return (
     <div className="space-y-6">
@@ -544,12 +532,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
               <FieldLabel>Repo URL</FieldLabel>
               <input value={pipelineForm.repoUrl} onChange={event => setPipelineForm(current => ({ ...current, repoUrl: event.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="https://github.com/owner/repo.git" />
             </label>
-            {pipelineForm.provider === 'GITHUB_ACTIONS' && (
-              <label className="min-w-0 md:col-span-2">
-                <FieldLabel>Workflow file</FieldLabel>
-                <input value={pipelineForm.workflowFile} onChange={event => setPipelineForm(current => ({ ...current, workflowFile: event.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="sbom.yml" />
-              </label>
-            )}
             <button type="button" onClick={createPipeline} disabled={!projectId || loading} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
               Tạo pipeline
             </button>
@@ -559,7 +541,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pipeline đang chọn</p>
             <p className="mt-1 truncate text-sm font-bold text-slate-800">{selectedPipeline?.name || 'Chưa chọn pipeline'}</p>
             <p className="mt-2 break-all text-xs text-slate-500">{selectedPipeline?.repo_url || 'Tạo hoặc chọn pipeline để chạy.'}</p>
-            {selectedPipeline?.provider === 'GITHUB_ACTIONS' && <p className="mt-2 text-xs font-medium text-sky-700">Workflow: {selectedPipeline.workflow_file || 'sbom.yml'}</p>}
             <button type="button" onClick={runPipeline} disabled={!selectedPipelineId || loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">
               {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               Run pipeline
@@ -625,11 +606,6 @@ const DeveloperCicd: React.FC<Props> = ({ systems, refreshSystems }) => {
             </div>
             {selectedRun && <Badge value={selectedRun.status} />}
           </div>
-          {selectedRun?.external_run_url && (
-            <a href={selectedRun.external_run_url} target="_blank" rel="noreferrer" className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:underline">
-              Mở workflow run trên GitHub <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          )}
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {(selectedRun?.steps || []).map(step => (
               <div key={step.step_id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">

@@ -148,29 +148,6 @@ CREATE TABLE IF NOT EXISTS system
     last_uploaded_at TIMESTAMP
 );
 
--- Repository-first catalog for the Web Application / Single Repository demo.
-CREATE TABLE IF NOT EXISTS sbom_repositories (
-    repository_id VARCHAR(80) PRIMARY KEY,
-    system_id INTEGER REFERENCES system(system_id) ON DELETE SET NULL,
-    name VARCHAR(255) NOT NULL,
-    github_url VARCHAR(500) UNIQUE NOT NULL,
-    architecture_type VARCHAR(255) NOT NULL,
-    tech_stack JSONB NOT NULL DEFAULT '[]'::jsonb,
-    package_managers JSONB NOT NULL DEFAULT '[]'::jsonb,
-    expected_dependency_files JSONB NOT NULL DEFAULT '[]'::jsonb,
-    application_type VARCHAR(80) NOT NULL DEFAULT 'Web Application',
-    repo_scope VARCHAR(80) NOT NULL DEFAULT 'Single Repository',
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-ALTER TABLE sbom_metadata
-    ADD COLUMN IF NOT EXISTS repository_id VARCHAR(80),
-    ADD COLUMN IF NOT EXISTS source_commit VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS source_repository_url VARCHAR(500);
-
 -- Snapshot/version tables for incremental SBOM generation and graph layout
 CREATE TABLE IF NOT EXISTS sbom_snapshots (
     snapshot_id VARCHAR(255) PRIMARY KEY,

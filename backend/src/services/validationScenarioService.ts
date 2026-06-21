@@ -12,7 +12,6 @@ import { sbomVerificationService } from './sbomVerificationService';
 import { sourceCloneService } from './sourceCloneService';
 import { testReportService } from './testReportService';
 import { metadataInferenceService } from './metadataInferenceService';
-import { repositorySbomDetectorService } from './repositorySbomDetectorService';
 
 const findOrCreateSystem = async (client: PoolClient, name: string, description: string) => {
   const existing = await client.query('SELECT system_id FROM system WHERE LOWER(name) = LOWER($1) LIMIT 1', [name]);
@@ -118,11 +117,6 @@ export const validationScenarioService = {
     try {
       const sourcePath = await sourceCloneService.cloneOrUpdate(repo.id, toGitCloneUrl(repo.githubUrl));
       const dependencyFiles = await dependencyFileDetectorService.detect(sourcePath);
-      if (dependencyFiles.length === 0) {
-        throw new Error('DEPENDENCY_FILES_NOT_FOUND: No supported dependency file was found in this repository.');
-      }
-      const revision = await sourceCloneService.inspectRevision(sourcePath);
-      const repositorySbom = await repositorySbomDetectorService.detect(sourcePath);
       const generated = await sbomGenerationService.generateCycloneDxFromSource(sourcePath, repo.id);
       const inferredMetadata = await metadataInferenceService.infer(sourcePath, {
         repoUrl: repo.githubUrl,
@@ -148,15 +142,6 @@ export const validationScenarioService = {
           architectureType: repo.architectureType,
           sourcePath,
           dependencyFiles,
-          repositorySbom,
-          workflowScenario: repositorySbom.usableForVerification
-            ? 'SERVICE_HAS_SBOM'
-            : 'SERVICE_WITHOUT_SBOM',
-          sourceCommit: revision.commit,
-          shortCommit: revision.shortCommit,
-          branch: revision.branch,
-          commitTimestamp: revision.committedAt,
-          analyzedAt: new Date().toISOString(),
           dependencyFileCount: dependencyFiles.length,
           componentCount: components.length,
           dependencyCount: dependencies.reduce((sum: number, dep: any) => sum + (Array.isArray(dep.dependsOn) ? dep.dependsOn.length : 0), 0),
@@ -168,17 +153,11 @@ export const validationScenarioService = {
           toolInfo: generated.toolInfo,
           createdTimestamp: generated.createdTimestamp,
           inferredMetadata,
-          components: components.slice(0, 500).map((component: any) => ({
-            name: component.name,
-            version: component.version || null,
-            type: component.type || 'library',
-            purl: component.purl || null,
-          })),
           confirmed: false,
         };
         await saveRun(saveClient, {
           ...baseRun,
-          status: repositorySbom.usableForVerification ? 'REPOSITORY_SBOM_DETECTED' : 'ANALYZED',
+          status: 'ANALYZED',
           sourcePath,
           sbomId: null,
           sbomPath: generated.sbomPath,
@@ -257,12 +236,6 @@ export const validationScenarioService = {
         `${repo.applicationType}; ${repo.repoScope}; ${repo.githubUrl}`
       );
       sbomId = await parseAndSaveSBOM(client, { sbom, system_id: systemId });
-      await client.query(
-        `UPDATE sbom_metadata SET repository_id = $1, source_commit = $2, analyzed_at = $3, source_repository_url = $4
-         WHERE sbom_id = $5`,
-        [repo.id, run.analysis?.sourceCommit || null, run.analysis?.analyzedAt || new Date(), repo.githubUrl, sbomId]
-      );
-      await client.query('UPDATE sbom_repositories SET system_id = $1, updated_at = CURRENT_TIMESTAMP WHERE repository_id = $2', [systemId, repo.id]);
       await saveRun(client, {
         runId: run.run_id,
         scenarioId: run.scenario_id,
@@ -339,30 +312,12 @@ export const validationScenarioService = {
 
   verify: async (runId: string, useFaulty = false) => {
     const run = await readRun(runId);
-    const repositorySbomPath = run.analysis?.repositorySbom?.selectedPath;
-    const targetPath = useFaulty ? run.faulty_sbom_path : repositorySbomPath || run.sbom_path;
-    if (!targetPath) throw new Error(useFaulty ? 'Faulty SBOM demo has not been created.' : 'No repository or generated SBOM is available for verification.');
+    const targetPath = useFaulty ? run.faulty_sbom_path : run.sbom_path;
+    if (!run.source_path) throw new Error('Source code repository has not been cloned for this run.');
+    if (!targetPath) throw new Error(useFaulty ? 'Faulty SBOM demo has not been created.' : 'SBOM has not been generated.');
     const sbom = JSON.parse(await fs.readFile(targetPath, 'utf8'));
+    const verificationReport = await sbomVerificationService.verifySourceAgainstSbom(run.source_path, sbom);
     const repo = await repositoryCatalogService.getById(run.scenario_id);
-    const currentSourcePath = await sourceCloneService.cloneOrUpdate(repo.id, toGitCloneUrl(repo.githubUrl));
-    const currentRevision = await sourceCloneService.inspectRevision(currentSourcePath);
-    const verificationReport = {
-      ...(await sbomVerificationService.verifySourceAgainstSbom(currentSourcePath, sbom)),
-      repository: repo.githubUrl,
-      sbomOrigin: repositorySbomPath ? 'SOURCE_REPOSITORY' : 'SBOM_MANAGEMENT',
-      repositorySbomFile: run.analysis?.repositorySbom?.selectedFile || null,
-      sbomSourceCommit: run.analysis?.repositorySbom?.selectedFile?.sourceCommit || run.analysis?.sourceCommit || repo.sourceCommit || null,
-      currentCommit: currentRevision.commit,
-      verifiedAt: new Date().toISOString(),
-      sourceChangedSinceGeneration: Boolean(
-        (run.analysis?.repositorySbom?.selectedFile?.sourceCommit || run.analysis?.sourceCommit || repo.sourceCommit)
-        && !(currentRevision.commit.startsWith(run.analysis?.repositorySbom?.selectedFile?.sourceCommit || run.analysis?.sourceCommit || repo.sourceCommit)
-          || (run.analysis?.repositorySbom?.selectedFile?.sourceCommit || run.analysis?.sourceCommit || repo.sourceCommit).startsWith(currentRevision.commit))
-      ),
-    };
-    Object.assign(verificationReport, {
-      recommendation: verificationReport.status === 'PASS' ? 'SBOM is up-to-date' : 'SBOM needs update',
-    });
     const testReport = testReportService.build(repo, { ...run, verification_report: verificationReport }, verificationReport);
     const client = await pool.connect();
     try {
@@ -391,18 +346,6 @@ export const validationScenarioService = {
     } finally {
       client.release();
     }
-  },
-
-  verifyCurrent: async (scenarioId: string) => {
-    const { rows } = await pool.query(
-      `SELECT run_id FROM sbom_validation_runs
-       WHERE scenario_id = $1 AND sbom_path IS NOT NULL
-         AND status IN ('REPOSITORY_SBOM_DETECTED','GENERATED','VERIFIED','FAULTY_VERIFIED')
-       ORDER BY updated_at DESC LIMIT 1`,
-      [scenarioId]
-    );
-    if (!rows[0]) throw new Error('CURRENT_SBOM_NOT_FOUND: This repository has no generated SBOM to verify.');
-    return validationScenarioService.verify(rows[0].run_id, false);
   },
 
   verifyUploaded: async (runId: string, sbom: any, fileName = 'uploaded-sbom.json') => {

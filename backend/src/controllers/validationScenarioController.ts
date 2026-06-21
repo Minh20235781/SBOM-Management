@@ -68,14 +68,6 @@ export const validationScenarioController = {
     }
   },
 
-  verifyCurrent: async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      res.json(await validationScenarioService.verifyCurrent(firstParam(req.params.scenarioId)));
-    } catch (error) {
-      next(error);
-    }
-  },
-
   verifyUploaded: async (req: Request, res: Response, next: NextFunction) => {
     try {
       res.json(await validationScenarioService.verifyUploaded(

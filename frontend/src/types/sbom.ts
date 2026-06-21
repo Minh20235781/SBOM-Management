@@ -234,7 +234,6 @@ export interface CicdPipeline {
   branch: string;
   trigger_type: 'MANUAL' | 'PUSH' | 'PULL_REQUEST' | 'SCHEDULE';
   repo_url?: string | null;
-  workflow_file?: string | null;
   latest_run_id?: number | null;
   latest_status?: string | null;
   latest_snapshot_id?: string | null;
@@ -261,12 +260,6 @@ export interface CicdPipelineRun {
   validation_report?: SbomValidationReport | null;
   pipeline_name?: string;
   repo_url?: string | null;
-  external_run_id?: string | null;
-  external_run_attempt?: number | null;
-  external_run_url?: string | null;
-  event_name?: string | null;
-  conclusion?: string | null;
-  sbom_id?: string | null;
   steps?: CicdPipelineStep[];
 }
 
