@@ -1,0 +1,43 @@
+name: Generate SBOM
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-sbom:
+    name: Generate CycloneDX SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - name: Verify generated file
+        shell: bash
+        run: |
+          test -s sbom.cdx.json
+          jq -e '.bomFormat == "CycloneDX"' sbom.cdx.json
+          jq '.components | length' sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.run_id }}
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
