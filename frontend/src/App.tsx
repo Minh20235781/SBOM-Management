@@ -61,19 +61,21 @@ function App() {
     `w-4 h-4 ${active ? 'text-blue-600 dark:text-blue-300' : `${inactiveClass} dark:text-slate-500`}`;
 
   const loadGeneratedSbomData = async (sbomId: string) => {
-    const metaRes = await fetch(`${API_BASE}/sboms/${sbomId}`);
+    const encodedSbomId = encodeURIComponent(sbomId);
+
+    const metaRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}`);
     const metaData = await metaRes.json();
     setMetadata(metaData);
 
-    const compRes = await fetch(`${API_BASE}/sboms/${sbomId}/components`);
+    const compRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/components`);
     const compData = await compRes.json();
     setComponents(compData);
 
-    const depRes = await fetch(`${API_BASE}/sboms/${sbomId}/dependencies`);
+    const depRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/dependencies`);
     const depData = await depRes.json();
     setDependencies(depData);
 
-    const vulnRes = await fetch(`${API_BASE}/sboms/${sbomId}/vulnerabilities`);
+    const vulnRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/vulnerabilities`);
     const vulnData = await vulnRes.json();
 
     const mappedVulns = vulnData.map((v: any) => ({
@@ -144,27 +146,33 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(uploadBody)
       });
-      const data = await response.json();
+      const responseText = await response.text();
+      const data = responseText ? JSON.parse(responseText) : {};
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || responseText || `Upload failed with status ${response.status}`);
+      }
       
       if (data.success) {
         const sbomId = data.sbomId;
+        const encodedSbomId = encodeURIComponent(sbomId);
         // Fetch metadata
-        const metaRes = await fetch(`${API_BASE}/sboms/${sbomId}`);
+        const metaRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}`);
         const metaData = await metaRes.json();
         setMetadata(metaData);
 
         // Fetch components
-        const compRes = await fetch(`${API_BASE}/sboms/${sbomId}/components`);
+        const compRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/components`);
         const compData = await compRes.json();
         setComponents(compData);
 
         // Fetch dependencies
-        const depRes = await fetch(`${API_BASE}/sboms/${sbomId}/dependencies`);
+        const depRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/dependencies`);
         const depData = await depRes.json();
         setDependencies(depData);
         
         // Fetch vulnerabilities
-        const vulnRes = await fetch(`${API_BASE}/sboms/${sbomId}/vulnerabilities`);
+        const vulnRes = await fetch(`${API_BASE}/sboms/${encodedSbomId}/vulnerabilities`);
         const vulnData = await vulnRes.json();
 
         const mappedVulns = vulnData.map((v: any) => ({
@@ -208,7 +216,7 @@ function App() {
       }
     } catch (e) {
       console.error(e);
-      alert("Error calling backend API");
+      alert(e instanceof Error ? e.message : "Error calling backend API");
     }
   };
 
