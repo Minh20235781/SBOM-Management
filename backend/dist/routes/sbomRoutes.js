@@ -161,6 +161,7 @@ router.post('/generate', sbomController_1.sbomController.generateFromGitHub);
  *         description: Server error
  */
 router.get('/', sbomController_1.sbomController.list);
+router.get('/:id/export', sbomController_1.sbomController.exportCycloneDx);
 /**
  * @swagger
  * /api/sboms/{id}:

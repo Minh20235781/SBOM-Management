@@ -50,6 +50,19 @@ const extractCycloneDxEcosystems = (sbom: any) => {
   return [...ecosystems].sort();
 };
 
+const firstParam = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value;
+
+const toCycloneDxBomRef = (sbomId: string, componentId: string) => {
+  const prefix = `${sbomId}::`;
+  return componentId.startsWith(prefix) ? componentId.slice(prefix.length) : componentId;
+};
+
+const parseLicenseString = (value: unknown) => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || text === 'N/A') return undefined;
+  return [{ license: text.includes(' ') ? { name: text } : { id: text } }];
+};
+
 const ensureRepositoryPipeline = async (client: any, systemId: number, repoUrl: string) => {
   const normalizedRepoUrl = String(repoUrl || '').trim();
   if (!normalizedRepoUrl) return;
@@ -234,6 +247,58 @@ export const sbomController = {
       const result = await pool.query('SELECT * FROM sbom_metadata WHERE sbom_id = $1', [id]);
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
       res.json(result.rows[0]);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  exportCycloneDx: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = firstParam(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Invalid SBOM id' });
+
+      const metadataResult = await pool.query('SELECT * FROM sbom_metadata WHERE sbom_id = $1', [id]);
+      if (metadataResult.rows.length === 0) return res.status(404).json({ error: 'SBOM not found' });
+
+      const metadata = metadataResult.rows[0];
+      const componentResult = await pool.query('SELECT * FROM component WHERE sbom_id = $1 ORDER BY name, version NULLS LAST', [id]);
+      const dependencyResult = await pool.query('SELECT component_ref, depends_on_ref FROM dependency WHERE sbom_id = $1', [id]);
+
+      const components = componentResult.rows.map(component => ({
+        type: 'library',
+        name: component.name,
+        version: component.version || undefined,
+        purl: component.purl || undefined,
+        cpe: component.cpe || undefined,
+        'bom-ref': toCycloneDxBomRef(id, component.component_id),
+        supplier: component.supplier_name ? { name: component.supplier_name } : undefined,
+        licenses: parseLicenseString(component.licenses),
+      }));
+
+      const dependencyMap = new Map<string, string[]>();
+      for (const row of dependencyResult.rows) {
+        const source = toCycloneDxBomRef(id, row.component_ref);
+        const target = toCycloneDxBomRef(id, row.depends_on_ref);
+        dependencyMap.set(source, [...(dependencyMap.get(source) || []), target]);
+      }
+
+      res.json({
+        bomFormat: 'CycloneDX',
+        specVersion: '1.5',
+        serialNumber: metadata.sbom_id,
+        metadata: {
+          timestamp: metadata.created_timestamp,
+          authors: metadata.authors
+            ? String(metadata.authors).split(',').map((name: string) => ({ name: name.trim() })).filter((item: any) => item.name)
+            : undefined,
+          tools: metadata.tool_components
+            ? { components: String(metadata.tool_components).split(',').map((name: string) => ({ name: name.trim() })).filter((item: any) => item.name) }
+            : undefined,
+          properties: metadata.lifecycle_phase ? [{ name: 'devops.lifecycle.phase', value: metadata.lifecycle_phase }] : undefined,
+        },
+        components,
+        dependencies: [...dependencyMap.entries()].map(([ref, dependsOn]) => ({ ref, dependsOn })),
+      });
     } catch (error) {
       next(error);
     }

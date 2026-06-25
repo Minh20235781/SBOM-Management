@@ -20,6 +20,10 @@ const inferDependencyFiles = (ecosystem) => {
 const toRepository = (row) => {
     const repoUrl = normalizeGitHubUrl(row.repo_url || '');
     const ecosystem = row.ecosystem || '';
+    const storedDependencyFiles = Array.isArray(row.dependency_files)
+        ? row.dependency_files.filter((file) => typeof file === 'string' && file.trim().length > 0)
+        : [];
+    const dependencyFiles = storedDependencyFiles.length > 0 ? storedDependencyFiles : inferDependencyFiles(ecosystem);
     return {
         id: `project-${row.system_id}`,
         systemId: Number(row.system_id),
@@ -31,7 +35,7 @@ const toRepository = (row) => {
         architectureType: row.description || 'Saved project repository',
         techStack: ecosystem ? [ecosystem] : [],
         packageManager: ecosystem ? [ecosystem] : [],
-        dependencyFiles: inferDependencyFiles(ecosystem),
+        dependencyFiles,
         description: row.description || `Repository saved for project ${row.name}.`,
         supportStatus: 'Saved in SBOM Management system',
     };
@@ -43,7 +47,11 @@ const projectRepositoryQuery = `
     s.description,
     p.pipeline_id,
     p.repo_url,
-    component_stats.ecosystem
+    component_stats.ecosystem,
+    COALESCE(
+      NULLIF(latest_validation.dependency_files, ARRAY[]::text[]),
+      NULLIF(artifact_files.dependency_files, ARRAY[]::text[])
+    ) AS dependency_files
   FROM system s
   JOIN LATERAL (
     SELECT pipeline_id, repo_url
@@ -66,6 +74,36 @@ const projectRepositoryQuery = `
     ORDER BY m.created_timestamp DESC NULLS LAST
     LIMIT 1
   ) component_stats ON true
+  LEFT JOIN LATERAL (
+    SELECT ARRAY(
+      SELECT dep_file
+      FROM (
+        SELECT DISTINCT COALESCE(file_item->>'path', file_item->>'name') AS dep_file
+        FROM jsonb_array_elements(COALESCE(r.analysis->'dependencyFiles', '[]'::jsonb)) AS file_item
+        WHERE COALESCE(file_item->>'path', file_item->>'name') IS NOT NULL
+          AND btrim(COALESCE(file_item->>'path', file_item->>'name')) <> ''
+      ) files
+      ORDER BY dep_file
+    ) AS dependency_files
+    FROM sbom_validation_runs r
+    WHERE r.scenario_id = 'project-' || s.system_id::text
+      AND r.analysis ? 'dependencyFiles'
+    ORDER BY r.updated_at DESC NULLS LAST
+    LIMIT 1
+  ) latest_validation ON true
+  LEFT JOIN LATERAL (
+    SELECT ARRAY(
+      SELECT artifact_file
+      FROM (
+        SELECT DISTINCT COALESCE(pa.artifact_path, pa.artifact_name) AS artifact_file
+        FROM project_artifacts pa
+        WHERE pa.project_id = s.system_id
+          AND COALESCE(pa.artifact_path, pa.artifact_name) IS NOT NULL
+          AND btrim(COALESCE(pa.artifact_path, pa.artifact_name)) <> ''
+      ) files
+      ORDER BY artifact_file
+    ) AS dependency_files
+  ) artifact_files ON true
 `;
 exports.repositoryCatalogService = {
     list: async () => {
