@@ -11,7 +11,9 @@ import { sbomGenerationService } from './sbomGenerationService';
 import { sbomVerificationService } from './sbomVerificationService';
 import { sourceCloneService } from './sourceCloneService';
 import { testReportService } from './testReportService';
+import { validationExcelExportService } from './validationExcelExportService';
 import { metadataInferenceService } from './metadataInferenceService';
+import { scanSBOMWithGrypeReport } from './grypeScannerService';
 
 const findOrCreateSystem = async (client: PoolClient, name: string, description: string) => {
   const existing = await client.query('SELECT system_id FROM system WHERE LOWER(name) = LOWER($1) LIMIT 1', [name]);
@@ -317,8 +319,18 @@ export const validationScenarioService = {
     if (!targetPath) throw new Error(useFaulty ? 'Faulty SBOM demo has not been created.' : 'SBOM has not been generated.');
     const sbom = JSON.parse(await fs.readFile(targetPath, 'utf8'));
     const verificationReport = await sbomVerificationService.verifySourceAgainstSbom(run.source_path, sbom);
+    const vulnerabilityScan = await scanSBOMWithGrypeReport(sbom);
     const repo = await repositoryCatalogService.getById(run.scenario_id);
-    const testReport = testReportService.build(repo, { ...run, verification_report: verificationReport }, verificationReport);
+    const analysis = {
+      ...(run.analysis || {}),
+      embeddedVulnerabilityCount: Array.isArray(sbom.vulnerabilities) ? sbom.vulnerabilities.length : 0,
+      vulnerabilityScan,
+    };
+    const testReport = testReportService.build(
+      repo,
+      { ...run, analysis, verification_report: verificationReport },
+      verificationReport
+    );
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -336,13 +348,13 @@ export const validationScenarioService = {
         sbomPath: run.sbom_path,
         faultySbomPath: run.faulty_sbom_path,
         confirmed: run.confirmed,
-        analysis: run.analysis,
+        analysis,
         graph: run.graph,
         verificationReport,
         testReport,
       });
       await client.query('COMMIT');
-      return { runId, verificationReport, testReport };
+      return { runId, verificationReport, vulnerabilityScan, testReport };
     } finally {
       client.release();
     }
@@ -362,6 +374,7 @@ export const validationScenarioService = {
     await fs.writeFile(uploadedSbomPath, JSON.stringify(sbom, null, 2), 'utf8');
 
     const verificationReport = await sbomVerificationService.verifySourceAgainstSbom(run.source_path, sbom);
+    const vulnerabilityScan = await scanSBOMWithGrypeReport(sbom);
     const repo = await repositoryCatalogService.getById(run.scenario_id);
     const analysis = {
       ...(run.analysis || {}),
@@ -369,6 +382,8 @@ export const validationScenarioService = {
       uploadedSbomPath,
       uploadedSbomComponentCount: Array.isArray(sbom.components) ? sbom.components.length : 0,
       uploadedSbomDependencyCount: Array.isArray(sbom.dependencies) ? sbom.dependencies.length : 0,
+      embeddedVulnerabilityCount: Array.isArray(sbom.vulnerabilities) ? sbom.vulnerabilities.length : 0,
+      vulnerabilityScan,
     };
     const testReport = testReportService.build(
       repo,
@@ -399,7 +414,7 @@ export const validationScenarioService = {
         testReport,
       });
       await client.query('COMMIT');
-      return { runId, uploadedSbomPath, uploadedFileName: fileName, verificationReport, testReport };
+      return { runId, uploadedSbomPath, uploadedFileName: fileName, verificationReport, vulnerabilityScan, testReport };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -411,5 +426,10 @@ export const validationScenarioService = {
   report: async (runId: string) => {
     const run = await readRun(runId);
     return run.test_report || null;
+  },
+
+  exportExcel: async (runId: string) => {
+    const run = await readRun(runId);
+    return validationExcelExportService.generate(run);
   },
 };

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.scanSBOMWithGrype = void 0;
+exports.scanSBOMWithGrype = exports.scanSBOMWithGrypeReport = void 0;
 const child_process_1 = require("child_process");
 const util_1 = __importDefault(require("util"));
 const promises_1 = __importDefault(require("fs/promises"));
@@ -14,9 +14,8 @@ const execFilePromise = util_1.default.promisify(child_process_1.execFile);
 const MAX_BUFFER = 50 * 1024 * 1024;
 const TIMEOUT_MS = Number(process.env.GRYPE_TIMEOUT_MS || 120000);
 const extractNumericEpss = (epssValue) => {
-    if (typeof epssValue === 'number' && Number.isFinite(epssValue)) {
+    if (typeof epssValue === 'number' && Number.isFinite(epssValue))
         return epssValue;
-    }
     if (typeof epssValue === 'string') {
         const parsed = Number.parseFloat(epssValue);
         return Number.isFinite(parsed) ? parsed : null;
@@ -24,73 +23,81 @@ const extractNumericEpss = (epssValue) => {
     if (Array.isArray(epssValue)) {
         for (const item of epssValue) {
             const extracted = extractNumericEpss(item);
-            if (extracted !== null) {
+            if (extracted !== null)
                 return extracted;
-            }
         }
         return null;
     }
-    if (epssValue && typeof epssValue === 'object') {
+    if (epssValue && typeof epssValue === 'object')
         return extractNumericEpss(epssValue.epss);
-    }
     return null;
 };
-const scanSBOMWithGrype = async (sbomData) => {
-    const tempId = (0, uuid_1.v4)();
-    const tempFilePath = path_1.default.join(os_1.default.tmpdir(), `sbom-${tempId}.json`);
+const scanSBOMWithGrypeReport = async (sbomData) => {
+    const tempFilePath = path_1.default.join(os_1.default.tmpdir(), `sbom-${(0, uuid_1.v4)()}.json`);
+    const scannedAt = new Date().toISOString();
     try {
-        // 1. Lưu SBOM ra file tạm
         await promises_1.default.writeFile(tempFilePath, JSON.stringify(sbomData), 'utf8');
-        // 2. Chạy child_process gọi Grype CLI (quét file sbom và trả kết quả dạng JSON)
-        // Ưu tiên đọc biến môi trường GRYPE_BIN để tránh lỗi PATH
         const grypeBin = process.env.GRYPE_BIN || 'grype';
         const { stdout } = await execFilePromise(grypeBin, [`sbom:${tempFilePath}`, '-o', 'json', '-q'], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER });
-        // 3. Phân tích kết quả JSON
         const result = JSON.parse(stdout);
-        if (!result || !result.matches) {
-            return [];
-        }
-        // 4. Map dữ liệu sang cấu trúc vulnerability của Backend
-        const vulnerabilities = result.matches.map((match) => {
-            let affectedRef = null;
-            // Grype thường gán SBOM component id (bom-ref / SPDXID) vào artifact.id
-            if (match.artifact && match.artifact.id) {
-                affectedRef = match.artifact.id;
-            }
+        const matches = Array.isArray(result?.matches) ? result.matches : [];
+        const findings = matches.map((match) => {
             const artifact = match.artifact || {};
-            const vulnInfo = match.vulnerability || {};
-            const fixVersions = Array.isArray(vulnInfo.fix?.versions) ? vulnInfo.fix.versions : [];
+            const vulnerability = match.vulnerability || {};
+            const fixVersions = Array.isArray(vulnerability.fix?.versions) ? vulnerability.fix.versions : [];
             return {
                 name: artifact.name || null,
                 installed: artifact.version || null,
                 fixed_in: fixVersions[0] || null,
                 package_type: artifact.type || null,
-                vulnerability: vulnInfo.id || 'UNKNOWN',
-                cve_id: vulnInfo.id || 'UNKNOWN',
-                severity: vulnInfo.severity || 'Unknown',
-                epss: extractNumericEpss(vulnInfo.epss ?? vulnInfo.score),
-                risk: vulnInfo.risk || vulnInfo.riskScore || null,
-                // Lấy description ưu tiên từ vulnInfo, nếu không có lấy từ relatedVulnerabilities
-                description: vulnInfo.description || match.relatedVulnerabilities?.[0]?.description || '',
-                affected_component_ref: affectedRef,
+                vulnerability: vulnerability.id || 'UNKNOWN',
+                cve_id: vulnerability.id || 'UNKNOWN',
+                severity: vulnerability.severity || 'Unknown',
+                epss: extractNumericEpss(vulnerability.epss ?? vulnerability.score),
+                risk: vulnerability.risk || vulnerability.riskScore || null,
+                description: vulnerability.description || match.relatedVulnerabilities?.[0]?.description || '',
+                affected_component_ref: artifact.id || artifact.purl || null,
             };
         });
-        return vulnerabilities;
+        return {
+            scanner: 'Grype',
+            scannerVersion: result?.descriptor?.version || null,
+            status: 'COMPLETED',
+            scannedAt,
+            findingCount: findings.length,
+            findings,
+            error: null,
+            note: findings.length
+                ? 'CVE findings are produced by Grype from SBOM components; static source comparison does not independently prove exploitability.'
+                : 'No vulnerability finding was returned by Grype for this SBOM.',
+        };
     }
     catch (error) {
-        const message = error?.stderr || error?.stdout || error?.message || 'Unknown Grype error';
-        console.error('Lỗi khi quét bằng Grype:', String(message).trim());
-        // Trả về mảng rỗng thay vì ném lỗi để không làm sập tiến trình upload SBOM chung
-        return [];
+        const message = String(error?.stderr || error?.stdout || error?.message || 'Unknown Grype error').trim();
+        console.error('Grype scan failed:', message);
+        return {
+            scanner: 'Grype',
+            scannerVersion: null,
+            status: 'FAILED',
+            scannedAt,
+            findingCount: 0,
+            findings: [],
+            error: message,
+            note: 'The vulnerability scan failed. Zero findings must not be interpreted as zero vulnerabilities.',
+        };
     }
     finally {
-        // 5. Dọn dẹp file tạm
         try {
             await promises_1.default.unlink(tempFilePath);
         }
-        catch (e) {
-            console.error('Không thể xóa file SBOM tạm:', e);
+        catch {
+            // Ignore cleanup errors for a temporary scan file.
         }
     }
+};
+exports.scanSBOMWithGrypeReport = scanSBOMWithGrypeReport;
+const scanSBOMWithGrype = async (sbomData) => {
+    const report = await (0, exports.scanSBOMWithGrypeReport)(sbomData);
+    return report.findings;
 };
 exports.scanSBOMWithGrype = scanSBOMWithGrype;

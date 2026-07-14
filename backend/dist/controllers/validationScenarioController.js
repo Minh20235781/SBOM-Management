@@ -87,4 +87,15 @@ exports.validationScenarioController = {
             next(error);
         }
     },
+    exportExcel: async (req, res, next) => {
+        try {
+            const report = await validationScenarioService_1.validationScenarioService.exportExcel(firstParam(req.params.runId));
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="${report.fileName}"`);
+            res.send(report.buffer);
+        }
+        catch (error) {
+            next(error);
+        }
+    },
 };

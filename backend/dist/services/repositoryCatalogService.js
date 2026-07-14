@@ -49,8 +49,8 @@ const projectRepositoryQuery = `
     p.repo_url,
     component_stats.ecosystem,
     COALESCE(
-      NULLIF(latest_validation.dependency_files, ARRAY[]::text[]),
-      NULLIF(artifact_files.dependency_files, ARRAY[]::text[])
+      NULLIF(latest_validation.dependency_files::text[], ARRAY[]::text[]),
+      NULLIF(artifact_files.dependency_files::text[], ARRAY[]::text[])
     ) AS dependency_files
   FROM system s
   JOIN LATERAL (

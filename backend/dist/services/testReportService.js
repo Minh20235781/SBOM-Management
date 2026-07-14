@@ -5,6 +5,7 @@ exports.testReportService = {
     build: (repo, run, verificationReport) => {
         const analysis = run.analysis || {};
         const graph = run.graph || {};
+        const vulnerabilityScan = analysis.vulnerabilityScan || null;
         const passed = Boolean(analysis.componentCount > 0
             && analysis.dependencyFileCount > 0
             && verificationReport);
@@ -19,6 +20,7 @@ exports.testReportService = {
             preconditions: [
                 'Git is available on backend host.',
                 'Syft is available on backend host.',
+                'Grype is available on backend host to enrich the verification report with CVE findings.',
                 'Repository is public and cloneable.',
                 'Current version supports Web Application + Single Repository only.',
             ],
@@ -30,10 +32,11 @@ exports.testReportService = {
                 'Persist metadata, components, and dependency relationships.',
                 'Confirm analysis before generating downloadable SBOM.',
                 'Verify the SBOM by regenerating source analysis and comparing components.',
+                'Scan the verified SBOM with Grype and record CVE findings separately from static source verification.',
             ],
-            expectedResult: 'SBOM is generated from the real repository and verification reports MATCHED, MISSING_IN_SBOM, EXTRA_IN_SBOM, VERSION_MISMATCH, counts, and Trust Score.',
+            expectedResult: 'SBOM is generated from the real repository; source verification reports component differences and Trust Score; Grype enrichment records CVE findings with package and fix information.',
             actualResult: verificationReport
-                ? `Verification finished with ${verificationReport.trustLevel} (${verificationReport.trustScore}%).`
+                ? `Verification finished with ${verificationReport.trustLevel} (${verificationReport.trustScore}%). Grype status: ${vulnerabilityScan?.status || 'NOT_RUN'}; findings: ${vulnerabilityScan?.findingCount ?? 0}.`
                 : 'Verification has not been run yet.',
             result: passed ? 'PASS' : 'FAIL',
             evidence: {
@@ -45,6 +48,11 @@ exports.testReportService = {
                 sbomPath: run.sbom_path || null,
                 generatedTimestamp: analysis.createdTimestamp || null,
                 trustScore: verificationReport?.trustScore ?? null,
+                vulnerabilityScanner: vulnerabilityScan?.scanner || 'Grype',
+                vulnerabilityScanStatus: vulnerabilityScan?.status || 'NOT_RUN',
+                vulnerabilityFindingCount: vulnerabilityScan?.findingCount ?? 0,
+                vulnerabilityScannedAt: vulnerabilityScan?.scannedAt || null,
+                vulnerabilityVerificationLimit: 'CVE findings come from Grype enrichment and are not independently verified by static source comparison.',
             },
         };
     },

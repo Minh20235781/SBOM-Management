@@ -288,5 +288,6 @@ router.post('/runs/:runId/verify-uploaded', validationScenarioController.verifyU
  *         description: Server error
  */
 router.get('/runs/:runId/report', validationScenarioController.report);
+router.get('/runs/:runId/report.xlsx', validationScenarioController.exportExcel);
 
 export default router;

@@ -363,3 +363,18 @@ Trang kiểm chứng làm việc với repository GitHub thật đã có trong h
 - Sinh viên: Nguyễn Nhật Minh
 - Email: [minh.nn235781@sis.hust.edu.vn](mailto:minh.nn235781@sis.hust.edu.vn)
 - GitHub: [Minh20235781](https://github.com/Minh20235781)
+
+## Xuất báo cáo kiểm chứng Excel
+
+Trang `Kiểm chứng SBOM` xuất báo cáo `.xlsx` trực tiếp sau khi hoàn tất `Verify SBOM`. File gồm các sheet:
+
+- `TongQuan`: phạm vi, kết quả, Trust Score, trạng thái Grype và số CVE.
+- `ThongKeCVE`: phân bố severity, CVE duy nhất, package bị ảnh hưởng, độ phủ bản vá/EPSS và ranh giới kiểm chứng.
+- `CVEChiTiet`: CVE, severity, package, phiên bản hiện tại, phiên bản vá, EPSS/risk, component ref và mô tả.
+- `KiemChungSource`: `MATCHED`, `MISSING_IN_SBOM`, `EXTRA_IN_SBOM`, `VERSION_MISMATCH`.
+- `PhanTichSource`, `TepPhuThuoc`, `BangChung`, `QuyTrinhKiemThu`: evidence và quy trình tạo báo cáo.
+- `ChuGiaiCVE`: nguồn từng trường, khả năng tự động hóa và phần cần con người kiểm tra.
+
+Kết quả CVE là dữ liệu làm giàu do Grype tạo từ SBOM. So sánh source tĩnh kiểm chứng inventory component nhưng không tự chứng minh khả năng khai thác của CVE. Nếu Grype lỗi, báo cáo ghi `FAILED` thay vì diễn giải nhầm là không có lỗ hổng.
+
+API tải file: `GET /api/validation-scenarios/runs/:runId/report.xlsx`.

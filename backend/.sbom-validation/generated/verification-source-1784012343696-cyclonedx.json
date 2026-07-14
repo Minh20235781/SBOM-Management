@@ -1,0 +1,93 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:43b4bf61-5eec-4d11-8ee1-2a9648ce87ff",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-07-14T13:59:03+07:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "author": "anchore",
+          "name": "syft",
+          "version": "1.45.1"
+        }
+      ]
+    },
+    "component": {
+      "bom-ref": "2e6ee5798f025919",
+      "type": "file",
+      "name": "C:\\Users\\DGC\\SBOM-Management\\backend\\.sbom-lifecycle\\sources\\4"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:maven/gradle-wrapper/gradle-wrapper@4.5.1?package-id=e0143bfcd1ce4ce6",
+      "type": "library",
+      "name": "gradle-wrapper",
+      "version": "4.5.1",
+      "cpe": "cpe:2.3:a:gradle-wrapper:gradle-wrapper:4.5.1:*:*:*:*:*:*:*",
+      "purl": "pkg:maven/gradle-wrapper/gradle-wrapper@4.5.1",
+      "externalReferences": [
+        {
+          "url": "",
+          "hashes": [
+            {
+              "alg": "SHA-1",
+              "content": "00d0743607178962f8b120da4ccad2c64c698aec"
+            }
+          ],
+          "type": "build-meta"
+        }
+      ],
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "java-archive-cataloger"
+        },
+        {
+          "name": "syft:package:language",
+          "value": "java"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "java-archive"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "java-archive"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gradle-wrapper:gradle_wrapper:4.5.1:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gradle_wrapper:gradle-wrapper:4.5.1:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gradle_wrapper:gradle_wrapper:4.5.1:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gradle:gradle-wrapper:4.5.1:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gradle:gradle_wrapper:4.5.1:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "\\gradle\\wrapper\\gradle-wrapper.jar"
+        },
+        {
+          "name": "syft:metadata:virtualPath",
+          "value": "\\gradle\\wrapper\\gradle-wrapper.jar"
+        }
+      ]
+    }
+  ]
+}

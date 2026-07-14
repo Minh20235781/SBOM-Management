@@ -181,6 +181,9 @@ const descriptionLabels: Record<string, string> = {
 };
 
 const reportTextLabels: Record<string, string> = {
+  'Grype is available on backend host to enrich the verification report with CVE findings.': 'Grype có sẵn trên máy chủ backend để làm giàu báo cáo kiểm chứng bằng các kết quả CVE.',
+  'Scan the verified SBOM with Grype and record CVE findings separately from static source verification.': 'Quét SBOM đã kiểm chứng bằng Grype và ghi kết quả CVE tách biệt với phần kiểm chứng source tĩnh.',
+  'SBOM is generated from the real repository; source verification reports component differences and Trust Score; Grype enrichment records CVE findings with package and fix information.': 'SBOM được tạo từ kho thật; phần kiểm chứng source báo cáo chênh lệch thành phần và điểm tin cậy; phần làm giàu Grype ghi CVE kèm package và phiên bản vá.',
   'SBOM validation demo for real Web Application source code in one GitHub repository.': 'Demo kiểm chứng SBOM cho mã nguồn ứng dụng web thực tế trong một kho GitHub.',
   'Git is available on backend host.': 'Git có sẵn trên máy chủ backend.',
   'Syft is available on backend host.': 'Syft có sẵn trên máy chủ backend.',
@@ -249,15 +252,6 @@ const confidenceClass = (confidence?: string) => {
 
 const formatEvidenceValue = (value: unknown) =>
   value === null || value === undefined || value === '' ? '-' : String(value);
-
-const escapeHtml = (value: unknown) =>
-  formatEvidenceValue(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
 
 const formatUiError = (value: string) => {
   const normalized = value.replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -639,64 +633,26 @@ const SbomValidationScenarios: React.FC = () => {
     setTestReport(data);
   });
 
-  const exportTestReportPdf = () => {
-    if (!testReport) return;
-    const evidenceRows = Object.entries(testReport.evidence || {})
-      .map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`)
-      .join('');
-    const steps = (testReport.steps || []).map(step => `<li>${escapeHtml(translateText(step))}</li>`).join('');
-    const preconditions = (testReport.preconditions || []).map(item => `<li>${escapeHtml(translateText(item))}</li>`).join('');
-    const popup = window.open('', '_blank', 'width=900,height=1100');
-    if (!popup) {
-      setError('Trình duyệt đã chặn cửa sổ xuất báo cáo. Hãy cho phép popup và thử lại.');
-      return;
+  const exportTestReportExcel = () => runAction('Export Excel', async () => {
+    if (!analysis?.runId || !testReport) return;
+    const res = await fetch(`${API_BASE}/api/validation-scenarios/runs/${analysis.runId}/report.xlsx`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || data.message || 'Xuất báo cáo Excel thất bại.');
     }
-    popup.document.write(`<!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>${escapeHtml(testReport.testCaseId)} - SBOM verification report</title>
-          <style>
-            body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; line-height: 1.45; }
-            h1 { font-size: 22px; margin: 0 0 6px; }
-            h2 { font-size: 15px; margin: 24px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-            .meta { color: #475569; font-size: 12px; margin-bottom: 18px; }
-            .status { display: inline-block; padding: 4px 9px; border-radius: 999px; font-weight: 700; background: ${testReport.result === 'PASS' ? '#dcfce7' : '#fee2e2'}; color: ${testReport.result === 'PASS' ? '#166534' : '#991b1b'}; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; vertical-align: top; }
-            th { width: 190px; background: #f8fafc; color: #475569; }
-            ul { margin-top: 6px; }
-            @media print { body { margin: 18mm; } button { display: none; } }
-          </style>
-        </head>
-        <body>
-          <button onclick="window.print()" style="float:right;padding:8px 12px;border:1px solid #cbd5e1;background:white;border-radius:6px;">Luu PDF</button>
-          <h1>SBOM Verification Report</h1>
-          <div class="meta">Generated: ${escapeHtml(new Date().toLocaleString('vi-VN'))}</div>
-          <table>
-            <tr><th>Test case ID</th><td>${escapeHtml(testReport.testCaseId)}</td></tr>
-            <tr><th>Name</th><td>${escapeHtml(translateTestReportName(testReport.name))}</td></tr>
-            <tr><th>Result</th><td><span class="status">${escapeHtml(translateStatus(testReport.result))}</span></td></tr>
-            <tr><th>Scope</th><td>${escapeHtml(translateText(testReport.scope))}</td></tr>
-            <tr><th>Application type</th><td>${escapeHtml(translateApplicationType(testReport.applicationType))}</td></tr>
-            <tr><th>Repo scope</th><td>${escapeHtml(translateRepoScope(testReport.repoScope))}</td></tr>
-            <tr><th>Architecture</th><td>${escapeHtml(translateArchitecture(testReport.architectureType))}</td></tr>
-            <tr><th>Input repo</th><td>${escapeHtml(testReport.inputRepo)}</td></tr>
-            <tr><th>Expected result</th><td>${escapeHtml(translateText(testReport.expectedResult))}</td></tr>
-            <tr><th>Actual result</th><td>${escapeHtml(translateActualResult(testReport.actualResult))}</td></tr>
-          </table>
-          <h2>Preconditions</h2>
-          <ul>${preconditions}</ul>
-          <h2>Steps</h2>
-          <ul>${steps}</ul>
-          <h2>Evidence</h2>
-          <table>${evidenceRows}</table>
-        </body>
-      </html>`);
-    popup.document.close();
-    popup.focus();
-    popup.print();
-  };
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+      || `${testReport.testCaseId}-verification-report.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  });
 
   const hasVerificationSbom = Boolean(uploadedSbom);
 
@@ -751,7 +707,7 @@ const SbomValidationScenarios: React.FC = () => {
     },
     {
       title: 'Báo cáo',
-      description: 'Mở báo cáo test case và evidence của lần kiểm chứng hiện tại.',
+      description: 'Xem báo cáo test case và xuất evidence của lần kiểm chứng hiện tại ra file Excel.',
       actions: [
         {
           label: 'View Test Report',
@@ -762,10 +718,11 @@ const SbomValidationScenarios: React.FC = () => {
           helper: !analysis ? 'Cần chuẩn bị source trước.' : 'Đang có thao tác khác chạy.',
         },
         {
-          label: 'Xuất PDF',
+          label: 'Xuất Excel',
           icon: <Download className="h-4 w-4" />,
-          onClick: exportTestReportPdf,
+          onClick: exportTestReportExcel,
           disabled: !testReport || Boolean(loadingAction),
+          loading: loadingAction === 'Export Excel',
           helper: !testReport ? 'Cần có báo cáo kiểm thử trước.' : 'Đang có thao tác khác chạy.',
         },
       ],
@@ -1046,7 +1003,7 @@ const SbomValidationScenarios: React.FC = () => {
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-900">Thông tin metadata do công cụ phát hiện</h3>
+                  <h3 className="font-bold text-slate-900">Metadata do hệ thống suy luận từ source</h3>
                   <p className="mt-1 text-sm text-slate-600">
                     Các trường này được suy luận từ Git history, file metadata và cấu trúc repository. Người dùng chỉ xem lại và xác nhận.
                   </p>
@@ -1143,6 +1100,9 @@ const SbomValidationScenarios: React.FC = () => {
       {verification && (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="font-bold text-slate-900">Báo cáo kiểm chứng</h3>
+          <p className="mt-1 text-sm leading-5 text-slate-500">
+            Syft cung cấp inventory từ source; hệ thống tự chuẩn hóa, đối chiếu component/version, phân loại sai lệch và tính Trust Score.
+          </p>
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
             {[
               ['Trust Score', `${verification.trustScore}%`],
