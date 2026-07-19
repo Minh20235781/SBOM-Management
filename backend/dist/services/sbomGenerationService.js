@@ -19,16 +19,25 @@ exports.sbomGenerationService = {
         const started = Date.now();
         const workDir = await sourceCloneService_1.sourceCloneService.ensureWorkDir();
         const cacheDir = path_1.default.join(workDir, 'cache');
+        const syftTarget = `dir:${path_1.default.resolve(repoPath)}`;
         await promises_1.default.mkdir(cacheDir, { recursive: true });
-        const { stdout } = await execFilePromise(syftBin, [repoPath, '-o', 'cyclonedx-json', '-q'], {
-            timeout: TIMEOUT_MS,
-            maxBuffer: MAX_BUFFER,
-            env: {
-                ...process.env,
-                XDG_CACHE_HOME: process.env.XDG_CACHE_HOME || cacheDir,
-                SYFT_CHECK_FOR_APP_UPDATE: 'false',
-            },
-        });
+        let stdout;
+        try {
+            const result = await execFilePromise(syftBin, [syftTarget, '--base-path', path_1.default.resolve(repoPath), '--source-name', path_1.default.basename(repoPath), '-vv', '-o', 'cyclonedx-json'], {
+                timeout: TIMEOUT_MS,
+                maxBuffer: MAX_BUFFER,
+                env: {
+                    ...process.env,
+                    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME || cacheDir,
+                    SYFT_CHECK_FOR_APP_UPDATE: 'false',
+                },
+            });
+            stdout = result.stdout;
+        }
+        catch (error) {
+            const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';
+            throw new Error(`Syft scan failed for ${syftTarget}: ${String(message).trim()}`);
+        }
         const analysisDurationMs = Date.now() - started;
         const sbom = JSON.parse(stdout);
         const outputDir = path_1.default.join(workDir, outputRootName);

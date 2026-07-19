@@ -1,0 +1,61 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:ff250895-5375-4a39-af8a-ff0ed6775c00",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-07-19T13:30:27+07:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "author": "anchore",
+          "name": "syft",
+          "version": "1.45.1"
+        }
+      ]
+    },
+    "component": {
+      "bom-ref": "16fb4757b18db778",
+      "type": "file",
+      "name": "C:\\Users\\DGC\\SBOM-Management\\backend\\.sbom-validation\\sources\\project-24"
+    },
+    "authors": [
+      {
+        "name": "Minh20235781 <minh.nn235781@sis.hust.edu.vn>"
+      },
+      {
+        "name": "Nguyễn Nhật Minh <leminh052209@gmail.com>"
+      },
+      {
+        "name": "Minh20235781 <leminh052209@gmail.com>"
+      }
+    ],
+    "properties": [
+      {
+        "name": "devops.lifecycle.phase",
+        "value": "Code"
+      },
+      {
+        "name": "devops.lifecycle.phase.source",
+        "value": "manual GitHub/source analyze context"
+      },
+      {
+        "name": "metadata.authors.source",
+        "value": "git log commit authors"
+      },
+      {
+        "name": "metadata.services.source",
+        "value": "repository name fallback"
+      }
+    ],
+    "lifecycle_phase": "Code"
+  },
+  "services": [
+    {
+      "name": "Sentry"
+    }
+  ],
+  "lifecycle_phase": "Code"
+}

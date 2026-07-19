@@ -137,27 +137,58 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
   const { normalizedRepoUrl, repoName } = normalizeGitHubRepoUrl(repoUrl);
   const tempRoot = path.join(os.tmpdir(), `syft-repo-${uuidv4()}`);
   const repoPath = path.join(tempRoot, 'repo');
+  const syftTarget = `dir:${path.resolve(repoPath)}`;
+  const cacheDir = path.join(tempRoot, 'cache');
 
   try {
     await fs.mkdir(tempRoot, { recursive: true });
+    await fs.mkdir(cacheDir, { recursive: true });
 
     const gitBin = process.env.GIT_BIN || 'git';
-    await execFilePromise(
-      gitBin,
-      ['-c', 'core.longpaths=true', 'clone', '--depth', '1', normalizedRepoUrl, repoPath],
-      { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }
-    );
+    try {
+      await execFilePromise(
+        gitBin,
+        ['-c', 'core.longpaths=true', 'clone', '--depth', '1', normalizedRepoUrl, repoPath],
+        { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }
+      );
+    } catch (error: any) {
+      const message = error?.stderr || error?.stdout || error?.message || 'Failed to clone GitHub repository';
+      throw new Error(`Git clone failed for ${normalizedRepoUrl}: ${String(message).trim()}`);
+    }
 
     const detectedFiles = await scanRepositoryFiles(repoPath);
 
     const syftBin = process.env.SYFT_BIN || 'syft';
-    const { stdout } = await execFilePromise(
-      syftBin,
-      [repoPath, '-o', 'cyclonedx-json', '-q'],
-      { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER }
-    );
+    const sbomOutputFile = path.join(tempRoot, 'sbom-output.json');
+    
+    try {
+      const result = await execFilePromise(
+        syftBin,
+        [
+          syftTarget, 
+          '--base-path', path.resolve(repoPath), 
+          // Đã xóa cờ '--name' / '--source-name' ở đây
+          '-o', `cyclonedx-json=${sbomOutputFile}`, 
+          '-q'
+        ],
+        {
+          timeout: TIMEOUT_MS * 3, // Giữ nguyên việc tăng timeout
+          maxBuffer: MAX_BUFFER,
+          env: {
+            ...process.env,
+            XDG_CACHE_HOME: process.env.XDG_CACHE_HOME || cacheDir,
+            SYFT_CHECK_FOR_APP_UPDATE: 'false',
+          },
+        }
+      );
+    } catch (error: any) {
+      const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';
+      throw new Error(`Syft scan failed for ${syftTarget}: ${String(message).trim()}`);
+    }
 
-    const sbom = JSON.parse(stdout);
+    // Đọc SBOM trực tiếp từ file đã được lưu vào ổ cứng
+    const sbomContent = await fs.readFile(sbomOutputFile, 'utf8');
+    const sbom = JSON.parse(sbomContent);
     const inferredMetadata = await metadataInferenceService.infer(repoPath, {
       repoUrl: normalizedRepoUrl,
       repoName,
@@ -166,8 +197,7 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
     const enrichedSbom = metadataInferenceService.injectIntoCycloneDx(sbom, inferredMetadata);
     return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata, ...detectedFiles };
   } catch (error: any) {
-    const message = error?.stderr || error?.stdout || error?.message || 'Failed to generate SBOM with Syft';
-    throw new Error(String(message).trim());
+    throw new Error(String(error?.message || 'Failed to generate SBOM with Syft').trim());
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
   }

@@ -1,0 +1,405 @@
+% !TeX program = pdflatex
+% Tài liệu độc lập, tương thích với trình biên dịch pdfLaTeX mặc định của Overleaf.
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,top=2.2cm,bottom=2.2cm,left=2.5cm,right=2cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{lmodern}
+
+\usepackage{microtype}
+\usepackage{setspace}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{ragged2e}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{pdflscape}
+\usepackage[table]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  pdftitle={Kịch bản thử nghiệm hệ thống quản lý SBOM},
+  pdfauthor={Nhóm phát triển}
+}
+
+\setstretch{1.15}
+\setlength{\parindent}{1.2cm}
+\setlength{\parskip}{3pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.18}
+\setlist[itemize]{leftmargin=1.7cm,itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{leftmargin=1.7cm,itemsep=2pt,topsep=3pt}
+
+\definecolor{headergray}{RGB}{230,230,230}
+\definecolor{lightgreen}{RGB}{226,239,218}
+\definecolor{lightred}{RGB}{255,230,230}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Kịch bản thử nghiệm hệ thống quản lý SBOM}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\captionsetup{font=small,labelfont=bf,labelsep=period}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\newcolumntype{C}[1]{>{\Centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\PASS}{\cellcolor{lightgreen}\textbf{Đạt}}
+\newcommand{\FAIL}{\cellcolor{lightred}\textbf{Không đạt}}
+
+% Hiển thị ảnh nếu tồn tại; nếu chưa có thì tạo khung giữ chỗ.
+\newcommand{\evidencefigure}[3][0.88\textwidth]{%
+  \begin{figure}[H]
+    \centering
+    \IfFileExists{#2}{%
+      \includegraphics[width=#1,height=0.58\textheight,keepaspectratio]{#2}%
+    }{%
+      \fbox{\parbox[c][5.2cm][c]{#1}{%
+        \centering\small Chèn ảnh minh chứng tại đây\\[3pt]
+        \code{#2}}}%
+    }
+    \caption{#3}
+  \end{figure}
+}
+
+\begin{document}
+
+\section{Mục tiêu thử nghiệm}
+
+Tài liệu này mô tả các kịch bản thử nghiệm đối với nguyên mẫu hệ thống quản lý
+Software Bill of Materials (SBOM). Hoạt động thử nghiệm nhằm xác nhận các mục tiêu sau:
+
+\begin{itemize}
+  \item Hệ thống có thể tiếp nhận và phân tích SBOM định dạng CycloneDX JSON.
+  \item Hệ thống có thể phân tích repository, phát hiện tệp khai báo phụ thuộc và sinh SBOM bằng Syft.
+  \item Hệ thống có thể đối chiếu SBOM đầu vào với inventory sinh lại từ mã nguồn.
+  \item Các sai lệch được phân loại đúng thành \code{MATCHED},
+        \code{MISSING\_IN\_SBOM}, \code{EXTRA\_IN\_SBOM} và
+        \code{VERSION\_MISMATCH}.
+  \item Hệ thống lưu được validation run, snapshot, pipeline run và bằng chứng liên quan.
+  \item Grype có thể làm giàu kết quả bằng thông tin lỗ hổng và hệ thống phân biệt được
+        quét thành công với quét thất bại.
+  \item Kết quả kiểm chứng có thể được xuất thành workbook Excel phục vụ lưu trữ bằng chứng.
+\end{itemize}
+
+\textbf{Nguyên tắc đánh giá:} kết quả của luồng chức năng và kết quả nội dung SBOM
+được đánh giá riêng. Một kịch bản chức năng được xem là \emph{đạt} khi hệ thống hoàn
+thành đúng quy trình và trả về kết quả mong đợi. Nội dung SBOM chỉ \code{PASS} khi
+không tồn tại component thiếu, thừa hoặc sai phiên bản. Vì vậy, luồng chức năng có
+thể đạt trong khi nội dung SBOM là \code{FAIL}; trường hợp này chứng tỏ chức năng
+phát hiện sai lệch hoạt động đúng.
+
+\section{Phạm vi và đối tượng thử nghiệm}
+
+\subsection{Các thành phần thuộc phạm vi}
+
+\begin{itemize}
+  \item Giao diện web React/TypeScript dùng để quản lý dự án, tải lên hoặc sinh SBOM,
+        xem kết quả và xuất báo cáo.
+  \item Backend Node.js/Express/TypeScript cung cấp REST API và xử lý nghiệp vụ.
+  \item PostgreSQL lưu dự án, SBOM, component, dependency, vulnerability, snapshot,
+        pipeline run và validation run.
+  \item Syft 1.45.1 sinh CycloneDX JSON từ repository hoặc thư mục mã nguồn.
+  \item Grype 0.114.0 quét SBOM để bổ sung thông tin CVE.
+  \item ExcelJS 4.4.0 tạo báo cáo kiểm chứng định dạng \code{.xlsx}.
+\end{itemize}
+
+\subsection{Ngoài phạm vi}
+
+Tài liệu không xác nhận mức sẵn sàng production, khả năng mở rộng ngang, hiệu năng tải
+lớn, an toàn khai thác CVE trong môi trường thực tế, xác thực/phân quyền hoặc mức bao
+phủ end-to-end hoàn chỉnh.
+
+\section{Môi trường và điều kiện thử nghiệm}
+
+\begin{table}[H]
+  \centering
+  \caption{Cấu hình môi trường thử nghiệm}
+  \begin{tabularx}{\textwidth}{|L{3.7cm}|Y|}
+    \hline
+    \rowcolor{headergray}\textbf{Thành phần} & \textbf{Cấu hình} \\ \hline
+    Frontend & Ứng dụng React/Vite, giao tiếp với backend qua REST API. \\ \hline
+    Backend & Server Node.js/Express xử lý nghiệp vụ và gọi công cụ bên ngoài. \\ \hline
+    Cơ sở dữ liệu & PostgreSQL lưu dữ liệu thử nghiệm và lịch sử chạy. \\ \hline
+    Công cụ sinh SBOM & Syft 1.45.1 trên cùng môi trường với backend. \\ \hline
+    Công cụ quét lỗ hổng & Grype 0.114.0; trạng thái scanner và lỗi được lưu riêng. \\ \hline
+    Công cụ xuất báo cáo & ExcelJS 4.4.0. \\ \hline
+    Phạm vi triển khai & Môi trường phát triển; pipeline là backend runner nội bộ. \\ \hline
+  \end{tabularx}
+\end{table}
+
+\subsection{Điều kiện tiên quyết chung}
+
+\begin{itemize}
+  \item Frontend, backend và PostgreSQL đang hoạt động; frontend gọi được REST API.
+  \item Syft và Grype đã được cài đặt, có quyền thực thi từ backend.
+  \item Repository thử nghiệm có thể được tải về hoặc đã tồn tại tại đường dẫn hợp lệ.
+  \item Người thử nghiệm có tệp CycloneDX JSON hợp lệ và các tệp SBOM đã được chỉnh sửa
+        để tạo trường hợp thiếu, thừa hoặc sai phiên bản.
+  \item Thư mục tạm của backend có đủ dung lượng; kết nối mạng khả dụng khi cần tải
+        repository hoặc cơ sở dữ liệu lỗ hổng.
+\end{itemize}
+
+\section{Dữ liệu thử nghiệm}
+
+Tại thời điểm chốt số liệu ngày 15/07/2026, cơ sở dữ liệu thử nghiệm ghi nhận
+24 hệ thống, 30 pipeline, 16 pipeline run, 37 SBOM và 13 snapshot. Mô-đun kiểm
+chứng ghi nhận 31 validation run trên 12 dự án; trong đó 14 run có báo cáo đối
+chiếu SBOM với mã nguồn. Bốn run đại diện được chọn để đánh giá như sau.
+
+\begin{table}[H]
+  \centering
+  \caption{Bộ dữ liệu đại diện}
+  \begin{tabularx}{\textwidth}{|C{1.6cm}|L{3.5cm}|C{3.4cm}|Y|}
+    \hline
+    \rowcolor{headergray}
+    \textbf{Mã} & \textbf{Dự án} & \textbf{Quy mô source scan} & \textbf{Mục đích} \\ \hline
+    DATA01 & BookStack & 157 component, 110 dependency & SBOM gần khớp hoàn toàn với source. \\ \hline
+    DATA02 & ThingsBoard & 2.281 component, 5.185 dependency & Kiểm tra repository quy mô lớn. \\ \hline
+    DATA03 & Taxi Booking Web App & 355 component, 798 dependency & Minh họa nhiều nhóm mismatch và Trust Score trung bình. \\ \hline
+    DATA04 & OFBiz Framework & 159 component, 140 dependency & Kiểm tra sai lệch lớn và Grype enrichment. \\ \hline
+  \end{tabularx}
+\end{table}
+
+Trust Score được tính theo công thức:
+\[
+  \mathrm{TrustScore}=
+  \frac{\mathrm{MatchedExact}}
+       {\mathrm{SourceComponentCount}+\mathrm{ExtraInSbomCount}}
+  \times 100.
+\]
+
+Trust Score phản ánh mức khớp inventory giữa SBOM đầu vào và SBOM sinh lại từ source;
+đây không phải điểm an toàn bảo mật và không chứng minh một CVE có thể bị khai thác.
+
+\section{Danh sách kịch bản thử nghiệm}
+
+\begin{table}[H]
+  \centering
+  \caption{Tổng hợp các kịch bản thử nghiệm}
+  \begin{tabularx}{\textwidth}{|C{2.1cm}|Y|L{3.2cm}|C{1.8cm}|}
+    \hline
+    \rowcolor{headergray}
+    \textbf{Mã} & \textbf{Mục tiêu} & \textbf{Dữ liệu} & \textbf{Ưu tiên} \\ \hline
+    SBOM-KT01 & Tải lên và phân tích CycloneDX JSON. & SBOM hợp lệ và không hợp lệ & Cao \\ \hline
+    SBOM-KT02 & Phân tích repository, phát hiện manifest và sinh SBOM bằng Syft. & DATA01--DATA04 & Cao \\ \hline
+    SBOM-KT03 & Đối chiếu SBOM với source và phân loại mismatch. & DATA01--DATA04 & Cao \\ \hline
+    SBOM-KT04 & Tạo pipeline run, cập nhật step và lưu snapshot/kết quả. & Dự án có repository & Trung bình \\ \hline
+    SBOM-KT05 & Xuất workbook Excel chứa tổng quan, diff và evidence. & Validation run hoàn tất & Cao \\ \hline
+    SBOM-KT06 & Chạy Grype và phân biệt quét thành công với quét thất bại. & DATA04 và cấu hình lỗi & Cao \\ \hline
+  \end{tabularx}
+\end{table}
+
+\section{Chi tiết kịch bản thử nghiệm}
+
+\subsection{SBOM-KT01 -- Tải lên và phân tích CycloneDX JSON}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận hệ thống tiếp nhận, kiểm tra và phân tích tệp CycloneDX JSON. \\ \hline
+  Tiền điều kiện & Hệ thống hoạt động; người dùng đã chọn một dự án hợp lệ. \\ \hline
+  Dữ liệu vào & Một tệp CycloneDX JSON hợp lệ; một tệp JSON sai cấu trúc để kiểm tra nhánh lỗi. \\ \hline
+  Các bước thực hiện &
+  1. Mở màn hình dự án và chọn chức năng tải SBOM.\newline
+  2. Chọn tệp CycloneDX JSON hợp lệ và xác nhận tải lên.\newline
+  3. Mở trang chi tiết SBOM, kiểm tra metadata, component và dependency.\newline
+  4. Lặp lại với tệp JSON sai cấu trúc. \\ \hline
+  Kết quả mong đợi &
+  Tệp hợp lệ được lưu và dữ liệu được hiển thị đúng; tệp không hợp lệ bị từ chối với
+  thông báo lỗi có thể hiểu được và không tạo bản ghi SBOM hỏng. \\ \hline
+  Tiêu chí đạt & Tất cả dữ liệu chính được trích xuất; nhánh lỗi không làm gián đoạn dịch vụ. \\ \hline
+\end{longtable}
+
+\subsection{SBOM-KT02 -- Phân tích repository và sinh SBOM}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận backend tải source, phát hiện manifest và gọi Syft để sinh CycloneDX JSON. \\ \hline
+  Tiền điều kiện & Repository truy cập được; Syft 1.45.1 có quyền thực thi. \\ \hline
+  Dữ liệu vào & URL repository hoặc đường dẫn source của DATA01--DATA04. \\ \hline
+  Các bước thực hiện &
+  1. Gắn repository với dự án.\newline
+  2. Chọn chức năng phân tích source.\newline
+  3. Kiểm tra danh sách tệp dependency manifest được phát hiện.\newline
+  4. Chọn sinh SBOM và chờ quá trình hoàn thành.\newline
+  5. Mở SBOM vừa tạo, kiểm tra metadata, component và dependency. \\ \hline
+  Kết quả mong đợi & Repository được xử lý; Syft trả về CycloneDX JSON hợp lệ; dữ liệu
+  được chuẩn hóa và lưu trong cơ sở dữ liệu. \\ \hline
+  Tiêu chí đạt & Luồng hoàn tất không lỗi và SBOM sinh ra có số lượng component lớn hơn 0. \\ \hline
+\end{longtable}
+
+\subsection{SBOM-KT03 -- Đối chiếu SBOM với mã nguồn}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận hệ thống phát hiện và phân loại chính xác sai lệch component. \\ \hline
+  Tiền điều kiện & Source đã được phân tích; có SBOM cần kiểm chứng. \\ \hline
+  Dữ liệu vào & DATA01--DATA04; các biến thể SBOM có component bị thêm, xóa hoặc đổi phiên bản. \\ \hline
+  Các bước thực hiện &
+  1. Mở chức năng kiểm chứng SBOM.\newline
+  2. Chọn repository/source path và tải SBOM cần đối chiếu.\newline
+  3. Chạy kiểm chứng, chờ hệ thống sinh inventory từ source.\newline
+  4. Kiểm tra bốn nhóm kết quả và Trust Score.\newline
+  5. Mở lại validation run để xác nhận kết quả đã được lưu. \\ \hline
+  Kết quả mong đợi & Mỗi component được xếp đúng nhóm; số liệu tổng hợp khớp chi tiết;
+  Trust Score đúng công thức; validation run lưu được report, graph và lỗi nếu có. \\ \hline
+  Tiêu chí đạt & Chức năng hoàn thành và phát hiện đúng các sai lệch đã chủ động tạo. \\ \hline
+\end{longtable}
+
+\subsection{SBOM-KT04 -- Pipeline, snapshot và lịch sử chạy}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận pipeline nội bộ tạo run, cập nhật step và lưu snapshot/kết quả. \\ \hline
+  Tiền điều kiện & Dự án có repository hợp lệ và cấu hình pipeline. \\ \hline
+  Dữ liệu vào & Một dự án có thể clone và sinh SBOM. \\ \hline
+  Các bước thực hiện &
+  1. Mở màn hình pipeline và kích hoạt một lần chạy.\newline
+  2. Theo dõi trạng thái từng step.\newline
+  3. Chờ run kết thúc và kiểm tra snapshot/change log.\newline
+  4. Mở lại lịch sử pipeline sau khi tải lại trang. \\ \hline
+  Kết quả mong đợi & Trạng thái chuyển đổi hợp lệ; thời điểm bắt đầu/kết thúc và lỗi được
+  lưu; snapshot có component/dependency tương ứng và lịch sử không bị mất. \\ \hline
+  Tiêu chí đạt & Pipeline run và các step có trạng thái cuối; kết quả truy xuất lại được. \\ \hline
+\end{longtable}
+
+\subsection{SBOM-KT05 -- Xuất báo cáo Excel}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận hệ thống xuất đầy đủ kết quả và bằng chứng của validation run. \\ \hline
+  Tiền điều kiện & Một validation run đã hoàn tất. \\ \hline
+  Dữ liệu vào & Validation run đại diện từ DATA01--DATA04. \\ \hline
+  Các bước thực hiện &
+  1. Mở chi tiết validation run.\newline
+  2. Chọn chức năng xuất báo cáo Excel.\newline
+  3. Mở workbook vừa tải xuống.\newline
+  4. Kiểm tra tên sheet, số liệu tổng quan, source diff, CVE và evidence. \\ \hline
+  Kết quả mong đợi & Workbook mở được và có các sheet:
+  \code{TongQuan}, \code{ThongKeCVE}, \code{CVEChiTiet},
+  \code{KiemChungSource}, \code{PhanTichSource}, \code{TepPhuThuoc},
+  \code{BangChung}, \code{QuyTrinhKiemThu}, \code{ChuGiaiCVE}. \\ \hline
+  Tiêu chí đạt & Số liệu trong workbook khớp giao diện và validation run; không có sheet hỏng. \\ \hline
+\end{longtable}
+
+\subsection{SBOM-KT06 -- Grype enrichment và xử lý lỗi scanner}
+
+\begin{longtable}{|L{3.4cm}|L{11.2cm}|}
+  \hline
+  \rowcolor{headergray}\textbf{Thuộc tính} & \textbf{Nội dung} \\ \hline
+  Mục tiêu & Xác nhận Grype bổ sung finding và hệ thống không đồng nhất lỗi quét với 0 lỗ hổng. \\ \hline
+  Tiền điều kiện & Có SBOM hợp lệ; Grype hoạt động cho nhánh thành công và được cấu hình
+  sai có chủ đích cho nhánh thất bại. \\ \hline
+  Dữ liệu vào & DATA04; một cấu hình đường dẫn Grype không hợp lệ hoặc lỗi có kiểm soát. \\ \hline
+  Các bước thực hiện &
+  1. Chạy Grype enrichment trên SBOM của DATA04.\newline
+  2. Kiểm tra trạng thái scanner, CVE, severity, package và fixed version.\newline
+  3. Lặp lại với cấu hình làm scanner thất bại.\newline
+  4. Xuất workbook của cả hai trường hợp. \\ \hline
+  Kết quả mong đợi & Nhánh thành công lưu finding; nhánh lỗi lưu trạng thái \code{FAILED}
+  và thông báo lỗi. Báo cáo không diễn giải scanner thất bại thành ``không có lỗ hổng''. \\ \hline
+  Tiêu chí đạt & Trạng thái, finding và lỗi được lưu/hiển thị đúng ở giao diện và Excel. \\ \hline
+\end{longtable}
+
+\section{Kết quả thử nghiệm}
+
+\begin{table}[H]
+  \centering
+  \caption{Kết quả đối chiếu trên các dự án đại diện}
+  \small
+  \begin{tabularx}{\textwidth}{|L{3.1cm}|r|r|r|r|C{1.8cm}|L{1.7cm}|C{1.7cm}|}
+    \hline
+    \rowcolor{headergray}
+    \textbf{Dự án} & \textbf{Matched} & \textbf{Missing} & \textbf{Extra} &
+    \textbf{Version} & \textbf{Trust Score} & \textbf{CVE} & \textbf{Nội dung} \\ \hline
+    BookStack & 157 & 1 & 1 & 0 & 98,74\% & Chưa quét & \FAIL \\ \hline
+    ThingsBoard & 1.791 & 38 & 101 & 40 & 90,91\% & Chưa quét & \FAIL \\ \hline
+    Taxi Booking Web App & 259 & 47 & 101 & 41 & 57,81\% & Chưa quét & \FAIL \\ \hline
+    OFBiz Framework & 3 & 53 & 158 & 97 & 0,96\% & 3 finding & \FAIL \\ \hline
+  \end{tabularx}
+\end{table}
+
+BookStack đạt Trust Score 98,74\% nhưng vẫn có một component thiếu và một component
+thừa nên nội dung là \code{FAIL}. Taxi Booking Web App có đầy đủ các dạng sai lệch,
+với Trust Score 57,81\%. OFBiz Framework có chênh lệch lớn giữa source và SBOM đầu
+vào; Grype hoàn thành quét và trả về ba finding. Số finding là số cặp CVE--package do
+Grype trả về, không nhất thiết bằng số CVE duy nhất và không chứng minh khả năng khai
+thác thực tế.
+
+\begin{table}[H]
+  \centering
+  \caption{Tổng hợp kết quả chức năng}
+  \begin{tabularx}{\textwidth}{|C{2.2cm}|Y|C{2.4cm}|L{3.0cm}|}
+    \hline
+    \rowcolor{headergray}
+    \textbf{Mã} & \textbf{Mục tiêu kiểm thử} & \textbf{Luồng chức năng} & \textbf{Nội dung SBOM} \\ \hline
+    SBOM-KT01 & Tải lên và phân tích CycloneDX JSON. & \PASS & Không áp dụng \\ \hline
+    SBOM-KT02 & Phân tích repository và sinh SBOM bằng Syft. & \PASS & Không áp dụng \\ \hline
+    SBOM-KT03 & Đối chiếu SBOM với source và phân loại mismatch. & \PASS & Tùy dữ liệu \\ \hline
+    SBOM-KT04 & Tạo pipeline run, cập nhật step và lưu snapshot. & \PASS & Tùy dữ liệu \\ \hline
+    SBOM-KT05 & Xuất workbook Excel chứa diff và evidence. & \PASS & Phản ánh run \\ \hline
+    SBOM-KT06 & Chạy Grype và phân biệt thành công/thất bại. & \PASS & Enrichment \\ \hline
+  \end{tabularx}
+\end{table}
+
+\evidencefigure{images/kiem-chung-sbom.png}
+  {Màn hình kiểm chứng SBOM và các nhóm sai lệch}
+
+\evidencefigure{images/bao-cao-excel.png}
+  {Workbook Excel được xuất từ validation run}
+
+\section{Nhận xét và hạn chế}
+
+\begin{itemize}
+  \item Các chức năng cốt lõi của nguyên mẫu đã thực thi được trong phạm vi thử nghiệm.
+  \item Trust Score thể hiện độ khớp inventory, không thay thế đánh giá rủi ro bảo mật.
+  \item Dữ liệu hiện tại được tạo ở nhiều thời điểm phát triển và chưa được chuẩn hóa
+        thành một benchmark cố định.
+  \item Grype mới được tích hợp vào các validation run gần đây; các run chưa quét phải
+        được hiển thị là ``chưa quét'', không được hiểu là không có CVE.
+  \item Dự án chưa có bộ integration test và end-to-end test đầy đủ.
+  \item Clone repository, sinh SBOM và quét lỗ hổng đang chạy trong luồng backend;
+        repository lớn có thể làm tăng thời gian chờ.
+\end{itemize}
+
+\section{Kết luận}
+
+Kết quả thử nghiệm cho thấy hệ thống có thể quản lý, sinh, phân tích và trực quan hóa
+SBOM; đồng thời lưu từng validation run, phát hiện các nhóm sai lệch component, tính
+Trust Score, bổ sung finding từ Grype và xuất bằng chứng thành Excel. Các kết quả này
+xác nhận tính khả thi của nguyên mẫu trong môi trường phát triển, nhưng chưa phải chứng
+nhận chất lượng production.
+
+\vspace{1.2cm}
+\begin{table}[H]
+  \centering
+  \begin{tabular}{C{0.45\textwidth}C{0.45\textwidth}}
+    \textbf{Người lập tài liệu} & \textbf{Người xác nhận} \\
+    \textit{(Ký và ghi rõ họ tên)} & \textit{(Ký và ghi rõ họ tên)} \\
+    \\[2.2cm]
+    ................................ & ................................
+  \end{tabular}
+\end{table}
+
+\end{document}
