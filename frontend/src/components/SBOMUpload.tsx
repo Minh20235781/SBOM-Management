@@ -25,6 +25,8 @@ type RepoAnalysis = {
   specVersion?: string | null;
   serialNumber?: string | null;
   componentCount: number;
+  syftComponentCount: number;
+  webAddedComponentCount: number;
   dependencyCount: number;
   dependencyReferenceCount: number;
   ecosystems: string[];
@@ -32,6 +34,8 @@ type RepoAnalysis = {
   createdTimestamp: string;
   sbomSizeBytes: number;
   analysisDurationMs: number;
+  embeddedVulnerabilityCount: number;
+  vulnerabilityFindingCount: number;
   inferredMetadata?: InferredMetadata | null;
   hasExistingSbom: boolean;
   detectedSbomFiles: string[];
@@ -354,7 +358,11 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
                   )}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-700">
-                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Component</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.componentCount}</p></div>
+                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Từ Syft</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.syftComponentCount}</p></div>
+                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Web bổ sung</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.webAddedComponentCount}</p></div>
+                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Tổng component</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.componentCount}</p></div>
+                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Vulnerability</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.embeddedVulnerabilityCount}</p></div>
+                  <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Grype findings</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.vulnerabilityFindingCount}</p></div>
                   <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Dependency</p><p className="text-lg font-bold text-slate-900">{repoAnalysis.dependencyCount}</p></div>
                   <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Ecosystem</p><p className="font-semibold text-slate-900">{repoAnalysis.ecosystems.join(', ') || '-'}</p></div>
                   <div className="rounded-lg bg-white p-2"><p className="text-slate-500">Kích thước</p><p className="font-semibold text-slate-900">{formatBytes(repoAnalysis.sbomSizeBytes)}</p></div>
@@ -379,7 +387,7 @@ const SBOMUpload: React.FC<Props> = ({ onUploadSuccess, session, onSessionChange
                   </div>
                 )}
                 <p className="mt-3 text-xs text-slate-500">
-                  Hãy kiểm tra thông tin phân tích. Nếu đúng, bấm Xác nhận phân tích rồi mới Sinh và tải SBOM.
+                  Hãy kiểm tra thông tin phân tích. SBOM tải xuống đã được làm giàu thêm vulnerability từ Grype; nếu đúng, bấm Xác nhận phân tích rồi mới Sinh và tải SBOM.
                 </p>
               </div>
               </div>

@@ -145,11 +145,8 @@ export const sbomController = {
   analyzeGitHub: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { repoUrl } = req.body || {};
-      const started = Date.now();
       const generated = await generateSbomFromGitHubRepo(repoUrl);
       const sbomText = JSON.stringify(generated.sbom, null, 2);
-      const components = Array.isArray(generated.sbom?.components) ? generated.sbom.components : [];
-      const dependencyEntries = Array.isArray(generated.sbom?.dependencies) ? generated.sbom.dependencies : [];
 
       res.json({
         success: true,
@@ -162,25 +159,7 @@ export const sbomController = {
         message: generated.detectedSbomFiles.length > 0
           ? 'Detected existing SBOM files in repository.'
           : 'No existing SBOM file detected in repository.',
-        analysis: {
-          repoUrl: generated.normalizedRepoUrl,
-          repoName: generated.repoName,
-          bomFormat: generated.sbom?.bomFormat || 'CycloneDX',
-          specVersion: generated.sbom?.specVersion || null,
-          serialNumber: generated.sbom?.serialNumber || null,
-          componentCount: components.length,
-          dependencyCount: countCycloneDxDependencyEdges(generated.sbom),
-          dependencyReferenceCount: dependencyEntries.length,
-          ecosystems: extractCycloneDxEcosystems(generated.sbom),
-          toolInfo: 'Syft CycloneDX JSON',
-          createdTimestamp: generated.sbom?.metadata?.timestamp || new Date().toISOString(),
-          sbomSizeBytes: Buffer.byteLength(sbomText, 'utf8'),
-          analysisDurationMs: Date.now() - started,
-          inferredMetadata: generated.inferredMetadata || null,
-          hasExistingSbom: generated.detectedSbomFiles.length > 0,
-          detectedSbomFiles: generated.detectedSbomFiles,
-          detectedManifestFiles: generated.detectedManifestFiles,
-        },
+        analysis: generated.analysis,
       });
     } catch (error) {
       next(error);

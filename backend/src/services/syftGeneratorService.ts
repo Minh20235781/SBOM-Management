@@ -5,6 +5,8 @@ import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { metadataInferenceService, InferredMetadata } from './metadataInferenceService';
+import { normalizeSbomPayload, stableComponentKey, type NormalizedComponent } from './sbomAlgorithms';
+import { scanSBOMWithGrypeReport, type GrypeFinding } from './grypeScannerService';
 
 const execFilePromise = util.promisify(execFile);
 const MAX_BUFFER = 50 * 1024 * 1024;
@@ -17,6 +19,29 @@ export interface GeneratedSbomResult {
   inferredMetadata?: InferredMetadata;
   detectedSbomFiles: string[];
   detectedManifestFiles: string[];
+  analysis: {
+    repoUrl: string;
+    repoName: string;
+    bomFormat: string;
+    specVersion?: string | null;
+    serialNumber?: string | null;
+    componentCount: number;
+    syftComponentCount: number;
+    webAddedComponentCount: number;
+    dependencyCount: number;
+    dependencyReferenceCount: number;
+    ecosystems: string[];
+    toolInfo: string;
+    createdTimestamp: string;
+    sbomSizeBytes: number;
+    analysisDurationMs: number;
+    embeddedVulnerabilityCount: number;
+    vulnerabilityFindingCount: number;
+    inferredMetadata?: InferredMetadata | null;
+    hasExistingSbom: boolean;
+    detectedSbomFiles: string[];
+    detectedManifestFiles: string[];
+  };
 }
 
 const SBOM_FILE_NAMES = new Set([
@@ -101,6 +126,121 @@ const scanRepositoryFiles = async (repoPath: string) => {
   };
 };
 
+const componentKey = (component: any) => stableComponentKey({
+  purl: component?.purl || null,
+  ecosystem: component?.type || null,
+  name: component?.name || null,
+  version: component?.version || null,
+  hashes: null,
+});
+
+const componentBomRef = (component: any, fallbackIndex: number) => component?.['bom-ref']
+  || component?.bomRef
+  || component?.purl
+  || `${component?.name || 'component'}@${component?.version || fallbackIndex}`;
+
+const normalizedComponentToCycloneDx = (component: NormalizedComponent, fallbackIndex: number) => ({
+  type: component.ecosystem && component.ecosystem !== 'unknown' ? component.ecosystem : 'library',
+  name: component.name,
+  version: component.version || undefined,
+  purl: component.purl || undefined,
+  'bom-ref': component.componentId || component.purl || component.stableKey || `web-${fallbackIndex}`,
+  supplier: component.supplier ? { name: component.supplier } : undefined,
+});
+
+const mergeDetectedSbomComponents = async (repoPath: string, detectedSbomFiles: string[], baseSbom: any) => {
+  const components = Array.isArray(baseSbom?.components) ? [...baseSbom.components] : [];
+  const dependencies = Array.isArray(baseSbom?.dependencies) ? [...baseSbom.dependencies] : [];
+  const vulnerabilities = Array.isArray(baseSbom?.vulnerabilities) ? [...baseSbom.vulnerabilities] : [];
+  const seenComponents = new Set(components.map(componentKey));
+  const seenDependencies = new Set(dependencies.map((dep: any) => `${dep?.ref || ''}->${Array.isArray(dep?.dependsOn) ? dep.dependsOn.join('|') : ''}`));
+  const seenVulnerabilities = new Set(vulnerabilities.map((vuln: any) => `${vuln?.id || vuln?.cve || ''}:${Array.isArray(vuln?.affects) ? vuln.affects.map((affect: any) => affect?.ref || '').join('|') : ''}`));
+  let webAddedComponentCount = 0;
+
+  for (const relativePath of detectedSbomFiles) {
+    if (!relativePath.toLowerCase().endsWith('.json')) continue;
+    const absolutePath = path.join(repoPath, relativePath);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(await fs.readFile(absolutePath, 'utf8'));
+    } catch {
+      continue;
+    }
+
+    const normalized = normalizeSbomPayload(parsed);
+    for (const [index, component] of normalized.components.entries()) {
+      const rawComponent = normalizedComponentToCycloneDx(component, index);
+      const key = componentKey(rawComponent);
+      if (seenComponents.has(key)) continue;
+      seenComponents.add(key);
+      components.push(rawComponent);
+      webAddedComponentCount += 1;
+    }
+
+    for (const dependency of Array.isArray(parsed?.dependencies) ? parsed.dependencies : []) {
+      const dependencyKey = `${dependency?.ref || ''}->${Array.isArray(dependency?.dependsOn) ? dependency.dependsOn.join('|') : ''}`;
+      if (seenDependencies.has(dependencyKey)) continue;
+      seenDependencies.add(dependencyKey);
+      dependencies.push(dependency);
+    }
+
+    for (const vulnerability of Array.isArray(parsed?.vulnerabilities) ? parsed.vulnerabilities : []) {
+      const vulnerabilityKey = `${vulnerability?.id || vulnerability?.cve || ''}:${Array.isArray(vulnerability?.affects) ? vulnerability.affects.map((affect: any) => affect?.ref || '').join('|') : ''}`;
+      if (seenVulnerabilities.has(vulnerabilityKey)) continue;
+      seenVulnerabilities.add(vulnerabilityKey);
+      vulnerabilities.push(vulnerability);
+    }
+  }
+
+  return { components, dependencies, vulnerabilities, webAddedComponentCount };
+};
+
+const grypeFindingToCycloneDxVulnerability = (finding: GrypeFinding, componentRef: string | null) => ({
+  id: finding.cve_id || finding.vulnerability,
+  ratings: [{ severity: finding.severity }],
+  description: finding.description || undefined,
+  affects: componentRef ? [{ ref: componentRef }] : [],
+});
+
+const indexComponentsByRef = (components: any[]) => {
+  const byRef = new Map<string, string>();
+  for (const component of components) {
+    const ref = componentBomRef(component, byRef.size);
+    const key = componentKey(component);
+    byRef.set(ref, ref);
+    byRef.set(key, ref);
+    if (typeof component?.purl === 'string') byRef.set(component.purl, ref);
+    if (typeof component?.name === 'string') byRef.set(`${component.name}@${component.version || ''}`, ref);
+  }
+  return byRef;
+};
+
+const enrichWithGrypeFindings = async (sbom: any) => {
+  const report = await scanSBOMWithGrypeReport(sbom);
+  if (report.status !== 'COMPLETED' || report.findings.length === 0) {
+    return { report, vulnerabilities: Array.isArray(sbom?.vulnerabilities) ? sbom.vulnerabilities : [] };
+  }
+
+  const vulnerabilities = Array.isArray(sbom?.vulnerabilities) ? [...sbom.vulnerabilities] : [];
+  const seen = new Set(vulnerabilities.map((vuln: any) => `${vuln?.id || vuln?.cve || ''}:${Array.isArray(vuln?.affects) ? vuln.affects.map((affect: any) => affect?.ref || '').join('|') : ''}`));
+  const componentIndex = indexComponentsByRef(Array.isArray(sbom?.components) ? sbom.components : []);
+
+  for (const finding of report.findings) {
+    const candidateRef = finding.affected_component_ref
+      ? componentIndex.get(finding.affected_component_ref)
+        || componentIndex.get(String(finding.affected_component_ref).toLowerCase())
+        || componentIndex.get(String(finding.affected_component_ref))
+      : null;
+    const vulnerability = grypeFindingToCycloneDxVulnerability(finding, candidateRef || null);
+    const vulnerabilityKey = `${vulnerability.id || ''}:${Array.isArray(vulnerability.affects) ? vulnerability.affects.map((affect: any) => affect?.ref || '').join('|') : ''}`;
+    if (seen.has(vulnerabilityKey)) continue;
+    seen.add(vulnerabilityKey);
+    vulnerabilities.push(vulnerability);
+  }
+
+  return { report, vulnerabilities };
+};
+
 const normalizeGitHubRepoUrl = (rawUrl: unknown) => {
   if (typeof rawUrl !== 'string') {
     throw new Error('Missing GitHub repository URL');
@@ -135,6 +275,7 @@ const normalizeGitHubRepoUrl = (rawUrl: unknown) => {
 
 export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<GeneratedSbomResult> => {
   const { normalizedRepoUrl, repoName } = normalizeGitHubRepoUrl(repoUrl);
+  const started = Date.now();
   const tempRoot = path.join(os.tmpdir(), `syft-repo-${uuidv4()}`);
   const repoPath = path.join(tempRoot, 'repo');
   const syftTarget = `dir:${path.resolve(repoPath)}`;
@@ -162,7 +303,7 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
     const sbomOutputFile = path.join(tempRoot, 'sbom-output.json');
     
     try {
-      const result = await execFilePromise(
+      await execFilePromise(
         syftBin,
         [
           syftTarget, 
@@ -189,13 +330,57 @@ export const generateSbomFromGitHubRepo = async (repoUrl: unknown): Promise<Gene
     // Đọc SBOM trực tiếp từ file đã được lưu vào ổ cứng
     const sbomContent = await fs.readFile(sbomOutputFile, 'utf8');
     const sbom = JSON.parse(sbomContent);
+    const syftComponentCount = Array.isArray(sbom.components) ? sbom.components.length : 0;
+    const mergedSbom = await mergeDetectedSbomComponents(repoPath, detectedFiles.detectedSbomFiles, sbom);
+    sbom.components = mergedSbom.components;
+    sbom.dependencies = mergedSbom.dependencies;
     const inferredMetadata = await metadataInferenceService.infer(repoPath, {
       repoUrl: normalizedRepoUrl,
       repoName,
       context: 'manual',
     });
+    const vulnerabilityInput = { ...sbom, vulnerabilities: mergedSbom.vulnerabilities };
+    const { report: vulnerabilityReport, vulnerabilities } = await enrichWithGrypeFindings(vulnerabilityInput);
+    sbom.vulnerabilities = vulnerabilities;
     const enrichedSbom = metadataInferenceService.injectIntoCycloneDx(sbom, inferredMetadata);
-    return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata, ...detectedFiles };
+    const components = Array.isArray(enrichedSbom.components) ? enrichedSbom.components : [];
+    const dependencyReferenceCount = Array.isArray(enrichedSbom.dependencies) ? enrichedSbom.dependencies.length : 0;
+    const embeddedVulnerabilityCount = Array.isArray(enrichedSbom.vulnerabilities) ? enrichedSbom.vulnerabilities.length : 0;
+    const sbomSizeBytes = Buffer.byteLength(JSON.stringify(enrichedSbom, null, 2), 'utf8');
+    const ecosystems: string[] = Array.from(new Set<string>(components.map((component: any): string => {
+      const purl = typeof component?.purl === 'string' ? component.purl : '';
+      if (purl.startsWith('pkg:')) {
+        const slash = purl.indexOf('/');
+        return slash > 4 ? purl.slice(4, slash) : 'unknown';
+      }
+      return component?.type ? String(component.type) : 'unknown';
+    }))).sort();
+    const analysis = {
+      repoUrl: normalizedRepoUrl,
+      repoName,
+      bomFormat: enrichedSbom.bomFormat || 'CycloneDX',
+      specVersion: enrichedSbom.specVersion || null,
+      serialNumber: enrichedSbom.serialNumber || null,
+      componentCount: components.length,
+      syftComponentCount,
+      webAddedComponentCount: mergedSbom.webAddedComponentCount,
+      dependencyCount: dependencyReferenceCount,
+      dependencyReferenceCount,
+      ecosystems,
+      toolInfo: vulnerabilityReport.status === 'COMPLETED'
+        ? 'Syft + Grype + repository SBOM enrichment'
+        : 'Syft + repository SBOM enrichment',
+      createdTimestamp: enrichedSbom.metadata?.timestamp || new Date().toISOString(),
+      sbomSizeBytes,
+      analysisDurationMs: Date.now() - started,
+      embeddedVulnerabilityCount,
+      vulnerabilityFindingCount: vulnerabilityReport.findingCount,
+      inferredMetadata,
+      hasExistingSbom: detectedFiles.detectedSbomFiles.length > 0,
+      detectedSbomFiles: detectedFiles.detectedSbomFiles,
+      detectedManifestFiles: detectedFiles.detectedManifestFiles,
+    };
+    return { sbom: enrichedSbom, normalizedRepoUrl, repoName, inferredMetadata, analysis, ...detectedFiles };
   } catch (error: any) {
     throw new Error(String(error?.message || 'Failed to generate SBOM with Syft').trim());
   } finally {
